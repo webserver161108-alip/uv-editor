@@ -1,0 +1,1890 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>UV Face Editor</title>
+<style>
+  :root{
+    --bg-0:#1b1b1e; --bg-1:#232326; --bg-2:#2c2c30; --line:#3a3a3f;
+    --text-0:#eceae6; --text-1:#a8a6a1; --accent:#e8823a; --accent-dim:#5a3d24;
+    --mono:"SF Mono","JetBrains Mono",Consolas,monospace; --sans:-apple-system,"Segoe UI",Inter,sans-serif;
+    --tap:40px; --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg-0);color:var(--text-0);font-family:var(--sans);height:100%;overflow:hidden;-webkit-tap-highlight-color:transparent;}
+  #app{display:flex;flex-direction:column;height:100vh;height:100dvh;min-height:360px;}
+
+  /* ---------- top bar ---------- */
+  #topbar{position:relative;z-index:30;display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg-1);border-bottom:1px solid var(--line);flex:0 0 auto;}
+  #topbar h1{font-size:14px;font-weight:600;margin:0 4px 0 2px;letter-spacing:.02em;white-space:nowrap;}
+  #topbar h1 span{color:var(--accent);}
+  .spacer{flex:1;}
+
+  /* ---------- buttons ---------- */
+  .btn{background:var(--bg-2);color:var(--text-0);border:1px solid var(--line);min-height:var(--tap);padding:0 14px;border-radius:var(--radius);font-size:13px;cursor:pointer;font-family:var(--sans);display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;flex-shrink:0;user-select:none;-webkit-user-select:none;}
+  @media (hover:hover){ .btn:hover{border-color:#55555c;background:#313136;} .btn.primary:hover{background:#f2924e;} }
+  .btn:active{background:#26262a;}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#1b1204;font-weight:600;}
+  .btn.primary:active{background:#d2742f;}
+  .btn.on{border-color:var(--accent);color:var(--accent);}
+  .btn:disabled{opacity:.35;cursor:not-allowed;}
+  .btn.small{padding:0 12px;}
+  .btn.icon{width:var(--tap);padding:0;font-size:17px;}
+  input[type=file]{display:none;}
+  .hint{color:var(--text-1);font-size:11.5px;}
+
+  /* ---------- tool panel (menu) ---------- */
+  #toolPanel{display:none;position:absolute;left:0;right:0;top:100%;background:var(--bg-1);border-bottom:1px solid var(--line);padding:10px 12px 14px;max-height:calc(100vh - 150px);max-height:calc(100dvh - 150px);overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;box-shadow:0 14px 28px rgba(0,0,0,.5);}
+  #toolPanel.open{display:block;}
+  .tool-groups{display:flex;flex-direction:column;gap:14px;}
+  .group-title{font-size:12px;font-weight:600;color:var(--text-1);margin-bottom:6px;}
+  .tool-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+  .tool-row + .tool-row{margin-top:8px;}
+  .chk{display:flex;align-items:center;gap:8px;color:var(--text-0);font-size:13px;white-space:nowrap;min-height:var(--tap);}
+  .chk input[type=checkbox]{width:20px;height:20px;margin:0;accent-color:var(--accent);}
+  .num{width:84px;height:36px;background:var(--bg-2);color:var(--text-0);border:1px solid var(--line);border-radius:8px;padding:0 8px;font-size:16px;font-family:var(--mono);}
+  .num:focus{outline:none;border-color:var(--accent);}
+  .num:disabled{opacity:.4;}
+  select#objectSelect{background:var(--bg-2);color:var(--text-0);border:1px solid var(--line);border-radius:var(--radius);min-height:var(--tap);padding:0 10px;font-size:16px;width:100%;max-width:420px;}
+
+  /* ---------- main area: 3D + UV ---------- */
+  main{flex:1;display:flex;flex-direction:row;min-height:0;min-width:0;}
+  .pane{position:relative;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;}
+  #pane3d{flex:1 1 0px;}
+  #uvPane{flex:1 1 0px;}
+  .pane-body{position:relative;flex:1 1 auto;min-height:0;min-width:0;}
+  .pane-body canvas{position:absolute;left:0;top:0;width:100%;height:100%;display:block;touch-action:none;cursor:crosshair;}
+  #viewport3d{cursor:grab;}
+  #viewport3d:active{cursor:grabbing;}
+  .pane-label{position:absolute;top:8px;left:10px;z-index:5;max-width:calc(100% - 150px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--text-1);pointer-events:none;background:rgba(27,27,30,.6);padding:3px 8px;border-radius:6px;}
+  #pane3d .pane-label{max-width:calc(100% - 20px);}
+  #uvToolbar{position:absolute;top:6px;right:8px;z-index:5;display:flex;gap:6px;}
+  #uvToolbar .btn{width:36px;min-height:36px;padding:0;font-size:16px;background:rgba(44,44,48,.9);}
+  #emptyState{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;color:var(--text-1);text-align:center;padding:20px;pointer-events:none;}
+  #emptyState .big{font-size:15px;color:var(--text-0);}
+  #emptyState .small{font-size:12px;max-width:340px;line-height:1.5;}
+
+  /* splitter between 3D and UV (drag to move the UV viewport up/down) */
+  #splitter{flex:0 0 22px;position:relative;background:var(--bg-1);border-top:1px solid var(--line);border-bottom:1px solid var(--line);cursor:row-resize;touch-action:none;user-select:none;-webkit-user-select:none;}
+  #splitter::after{content:"";position:absolute;left:50%;top:50%;width:44px;height:4px;margin:-2px 0 0 -22px;border-radius:2px;background:#5c5c63;}
+  #splitter.drag::after{background:var(--accent);}
+
+  /* UV pane header */
+  .pane-head{display:flex;align-items:center;gap:6px;flex:0 0 auto;height:46px;padding:0 8px 0 12px;background:var(--bg-1);border-bottom:1px solid var(--line);}
+  .pane-title{font-size:13px;font-weight:600;letter-spacing:.02em;white-space:nowrap;}
+  #uvToggleBtn .ico{font-size:12px;}
+  #uvPane.collapsed{flex:0 0 auto !important;}
+  #uvPane.collapsed .pane-body, #uvPane.collapsed #gizmoBar, #uvPane.collapsed .when-open{display:none;}
+  #uvPane.collapsed .pane-head{border-bottom:none;}
+
+  /* gizmo bar (mode switch + numeric fields) */
+  #gizmoBar{flex:0 0 auto;display:flex;flex-direction:column;gap:6px;padding:6px 8px 8px;background:var(--bg-1);border-top:1px solid var(--line);}
+  .seg{display:flex;gap:3px;padding:3px;background:var(--bg-0);border:1px solid var(--line);border-radius:12px;}
+  .seg button{flex:1;min-height:36px;border:0;border-radius:9px;background:transparent;color:var(--text-1);font-size:13.5px;font-weight:600;font-family:var(--sans);cursor:pointer;-webkit-user-select:none;user-select:none;}
+  .seg button.active{background:var(--accent);color:#1b1204;}
+  #gizmoFields{min-height:36px;}
+  .fieldset{display:none;gap:8px;align-items:center;}
+  .fieldset.show{display:flex;}
+  .fld{flex:1;min-width:0;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-1);}
+  .fld .num{flex:1;min-width:0;width:100%;}
+  .fld .ax{font-weight:700;font-family:var(--mono);}
+  .fld .ax.x{color:#e0503f;} .fld .ax.y{color:#5fbf6e;}
+
+  footer{flex:0 0 auto;padding:6px 14px;background:var(--bg-1);border-top:1px solid var(--line);font-family:var(--mono);font-size:10.5px;color:var(--text-1);display:flex;gap:6px 16px;flex-wrap:wrap;}
+  footer b{color:var(--text-0);font-weight:600;}
+  footer .credit{margin-left:auto;letter-spacing:.06em;white-space:nowrap;}
+  footer .credit b{color:var(--accent);}
+
+  /* ---------- wide screens: side-by-side ---------- */
+  @media (min-width:761px){
+    .tool-groups{flex-direction:row;flex-wrap:wrap;gap:12px 32px;}
+    #splitter{flex:0 0 16px;border-top:none;border-bottom:none;border-left:1px solid var(--line);border-right:1px solid var(--line);cursor:col-resize;}
+    #splitter::after{width:4px;height:44px;margin:-22px 0 0 -2px;}
+    #uvPane.collapsed{flex:0 0 52px !important;}
+    #uvPane.collapsed .pane-title{display:none;}
+    #uvPane.collapsed .pane-head{padding:0 6px;justify-content:center;}
+    #uvPane.collapsed #uvToggleBtn .lbl{display:none;}
+  }
+  /* ---------- phones: stacked ---------- */
+  @media (max-width:760px){
+    main{flex-direction:column;}
+  }
+  @media (max-width:380px){
+    #topbar h1{display:none;}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <h1>UV<span>/</span>Face Editor</h1>
+    <button class="btn primary" id="loadBtn">Buka Model</button>
+    <input type="file" id="fileInput" accept=".obj,.glb,.gltf,.bin,image/*" multiple>
+    <div class="spacer"></div>
+    <button class="btn icon" id="undoBtn" disabled title="Undo" aria-label="Undo">↶</button>
+    <button class="btn icon" id="redoBtn" disabled title="Redo" aria-label="Redo">↷</button>
+    <button class="btn icon" id="menuBtn" title="Menu" aria-label="Menu" aria-expanded="false">☰</button>
+    <section id="toolPanel" aria-label="Menu alat">
+      <div class="tool-groups">
+        <div class="tool-group" id="objectSelectWrap" style="display:none;">
+          <div class="group-title">Objek</div>
+          <div class="tool-row"><select id="objectSelect"></select></div>
+        </div>
+        <div class="tool-group">
+          <div class="group-title">Tekstur</div>
+          <div class="tool-row">
+            <button class="btn small" id="textureBtn" disabled>Muat Tekstur</button>
+            <input type="file" id="textureInput" accept="image/png,image/jpeg">
+            <label class="chk"><input type="checkbox" id="uvShowTexToggle">Tekstur di UV</label>
+          </div>
+          <div class="tool-row">
+            <label class="chk" style="gap:8px;" title="Skala tiling UV — perbesar = texture mengulang lebih banyak, perkecil = texture makin besar & pengulangan berkurang">UV Scale
+              <input type="number" id="uvScaleInput" class="num" step="0.1" min="0.05" value="1" disabled>
+            </label>
+            <button class="btn small icon" id="uvScaleResetBtn" disabled title="Reset UV Scale ke 1">↺</button>
+          </div>
+        </div>
+        <div class="tool-group">
+          <div class="group-title">Ekspor</div>
+          <div class="tool-row">
+            <button class="btn small" id="exportOBJBtn" disabled>.OBJ</button>
+            <button class="btn small" id="exportGLBBtn" disabled>.GLB</button>
+            <button class="btn small" id="exportGLTFBtn" disabled>.GLTF</button>
+            <button class="btn small primary" id="exportPngBtn" disabled>Download UV Map</button>
+          </div>
+        </div>
+        <div class="tool-group">
+          <div class="group-title">Seleksi</div>
+          <div class="tool-row">
+            <button class="btn small" id="selectAllBtn" disabled>Semua</button>
+            <button class="btn small" id="deselectBtn" disabled>Batal</button>
+            <button class="btn small" id="resetSelBtn" disabled>Reset terpilih</button>
+            <button class="btn small" id="resetAllBtn" disabled>Reset semua</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </header>
+
+  <main id="mainArea">
+    <div class="pane" id="pane3d">
+      <div class="pane-body">
+        <div class="pane-label">3D — 1 jari putar · 2 jari geser/zoom · ketuk face = pilih</div>
+        <canvas id="viewport3d"></canvas>
+      </div>
+    </div>
+    <div id="splitter" role="separator" aria-label="Geser batas viewport UV"></div>
+    <div class="pane" id="uvPane">
+      <div class="pane-head" id="uvHead">
+        <span class="pane-title">UV Viewport</span>
+        <div class="spacer"></div>
+        <button class="btn small icon when-open" id="uvUpBtn" title="Perbesar viewport UV" aria-label="Geser viewport UV ke atas">↑</button>
+        <button class="btn small icon when-open" id="uvDownBtn" title="Perkecil viewport UV" aria-label="Geser viewport UV ke bawah">↓</button>
+        <button class="btn small" id="uvToggleBtn" aria-expanded="true" title="Buka / tutup viewport UV"><span class="ico">▾</span><span class="lbl">Tutup</span></button>
+      </div>
+      <div class="pane-body" id="uvBody">
+        <div class="pane-label" id="uvHint"></div>
+        <div id="uvToolbar">
+          <button class="btn small" id="zoomOutBtn">−</button>
+          <button class="btn small" id="fitBtn">⤢</button>
+          <button class="btn small" id="zoomInBtn">+</button>
+        </div>
+        <canvas id="uvCanvas"></canvas>
+        <div id="emptyState">
+          <div class="big">Belum ada objek</div>
+          <div class="small">Muat file .obj, .glb, atau .gltf untuk mulai mengedit UV per-face seperti di Blender. Untuk .gltf dengan file eksternal (.bin/tekstur), pilih semuanya sekaligus.</div>
+        </div>
+      </div>
+      <div id="gizmoBar">
+        <div class="seg" id="gizmoModes" role="group" aria-label="Mode gizmo">
+          <button type="button" data-mode="position" class="active" aria-pressed="true">Position</button>
+          <button type="button" data-mode="rotate" aria-pressed="false">Rotate</button>
+          <button type="button" data-mode="scale" aria-pressed="false">Scale</button>
+        </div>
+        <div id="gizmoFields">
+          <div class="fieldset show" data-for="position">
+            <label class="fld"><span class="ax x">X</span><input type="number" class="num" id="posX" step="any" disabled></label>
+            <label class="fld"><span class="ax y">Y</span><input type="number" class="num" id="posY" step="any" disabled></label>
+          </div>
+          <div class="fieldset" data-for="rotate">
+            <label class="fld"><span>Sudut (°)</span><input type="number" class="num" id="rotAngle" step="any" disabled></label>
+          </div>
+          <div class="fieldset" data-for="scale">
+            <label class="fld"><span>Semua</span><input type="number" class="num" id="scAll" step="any" disabled></label>
+            <label class="fld"><span class="ax x">X</span><input type="number" class="num" id="scX" step="any" disabled></label>
+            <label class="fld"><span class="ax y">Y</span><input type="number" class="num" id="scY" step="any" disabled></label>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <span>Objek: <b id="statObjName">-</b> (<b id="statObjIdx">0</b>/<b id="statObjCount">0</b>)</span>
+    <span>Face: <b id="statFaces">0</b></span>
+    <span>Vertex: <b id="statVerts">0</b></span>
+    <span>Terpilih: <b id="statSelected">0</b></span>
+    <span class="credit">by <b>ALEPS DEVELOPMENT STUDIO</b></span>
+  </footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* ============================= GLOBAL STATE ============================= */
+let objects = [];        // array of editable objects {name,positions,normals,faces,cornerUVs,uvs,uvsOriginal,texture,threeMesh,renderCornerRefs,undoStack,redoStack}
+let gltfNodes = [];      // {name, matrix:THREE.Matrix4, children:[idx], meshObjectIndex}
+let rootIndices = [];
+let activeObjectIndex = 0;
+let mesh = null;         // alias for objects[activeObjectIndex]
+let selected = new Set();
+let uvView = { minU:-0.5, minV:-0.5, span:2.0, zoom:1, panX:0, panY:0 };
+let uvCanvasDPR = 1; // actual pixel ratio the uvCanvas buffer was sized with (kept in sync in resizeCanvases)
+
+// Handle sizing (in canvas-buffer px, i.e. already dpr-scaled). Hit radii are kept
+// larger than the drawn size so fingers (not just a mouse pointer) can grab them.
+const HANDLE_DRAW_SIZE = 16;
+const HANDLE_HIT_RADIUS = 26;
+const ROTATE_HANDLE_OFFSET = 38;
+const ROTATE_HANDLE_RADIUS = 10;
+const ROTATE_HANDLE_HIT_RADIUS = 24;
+const MOVE_HANDLE_RADIUS = 13;
+const MOVE_HANDLE_HIT_RADIUS = 24;
+const AXIS_HANDLE_HIT_RADIUS = 22;
+const AXIS_X_COLOR = '#e0503f';
+const AXIS_Y_COLOR = '#5fbf6e';
+
+/* ---- Gizmo transform (Position / Rotate / Scale) — single active mode ---- */
+let gizmoMode = 'position';                 // 'position' | 'rotate' | 'scale' (hanya satu aktif)
+let liveRotDeg = 0, liveFx = 1, liveFy = 1; // nilai relatif yang tampil di kolom angka (netral = 0, 1, 1)
+let numSession = null;                      // sesi edit lewat angka (snapshot UV terpilih)
+const GIZMO_HIT_AXIS_CSS = 22;              // radius sentuh (CSS px) — cukup besar untuk jari
+const GIZMO_HIT_CENTER_CSS = 20;
+const GIZMO_HIT_RING_CSS = 18;
+let uvShowTexture = false;
+let uvBackgroundImage = null;
+let overlayMesh = null;
+let _defaultChecker = null;
+
+function isMobileWidth(){ return window.innerWidth < 820; }
+
+/* ============================= OBJ IMPORT ============================= */
+function resolveIndex(idx, count){
+  if(idx > 0) return idx - 1;
+  if(idx < 0) return count + idx;
+  return null;
+}
+
+function parseOBJMulti(text){
+  const positions=[], normals=[], uvsOriginal=[];
+  const groups=[];
+  let currentGroup=null;
+  const ensureGroup=(name)=>{ currentGroup={name,faces:[]}; groups.push(currentGroup); return currentGroup; };
+  ensureGroup('Object');
+  text.split(/\r?\n/).forEach(raw=>{
+    const line = raw.trim();
+    if(!line || line.startsWith('#')) return;
+    const parts = line.split(/\s+/);
+    const tag = parts[0];
+    if(tag==='v') positions.push(parts.slice(1,4).map(Number));
+    else if(tag==='vt') uvsOriginal.push(parts.slice(1,3).map(Number));
+    else if(tag==='vn') normals.push(parts.slice(1,4).map(Number));
+    else if(tag==='o' || tag==='g') ensureGroup(parts.slice(1).join(' ') || 'Object');
+    else if(tag==='f'){
+      const corners = parts.slice(1).map(tok=>{
+        const seg = tok.split('/');
+        const vi = seg[0] ? resolveIndex(parseInt(seg[0],10), positions.length) : null;
+        const vti = seg[1] ? resolveIndex(parseInt(seg[1],10), uvsOriginal.length) : null;
+        const vni = seg[2] ? resolveIndex(parseInt(seg[2],10), normals.length) : null;
+        return {v:vi, vt:vti, vn:vni};
+      }).filter(c=>c.v!==null);
+      if(corners.length>=3){ if(!currentGroup) ensureGroup('Object'); currentGroup.faces.push(corners); }
+    }
+  });
+  const nonEmpty = groups.filter(g=>g.faces.length>0);
+  if(positions.length===0) throw new Error('Tidak ada data vertex (v) ditemukan di file ini.');
+  if(nonEmpty.length===0) throw new Error('Tidak ada data face (f) ditemukan di file ini.');
+  return {positions, normals, uvsOriginal, groups: nonEmpty};
+}
+
+function buildIndependentUVs(faces, lookup){
+  const uvs=[], cornerUVs=[];
+  faces.forEach((face,fi)=>{
+    const idxs=[]; const n=face.length;
+    face.forEach((corner,ci)=>{
+      let uv = lookup ? lookup(corner,ci,fi) : null;
+      if(!uv){ const ang=(ci/n)*Math.PI*2; uv=[0.5+Math.cos(ang)*0.4, 0.5+Math.sin(ang)*0.4]; }
+      uvs.push([uv[0],uv[1]]);
+      idxs.push(uvs.length-1);
+    });
+    cornerUVs.push(idxs);
+  });
+  return {uvs, cornerUVs};
+}
+
+// ---- Normal integrity pass -------------------------------------------------
+// Root-cause fix for the "lighting looks wrong after rotating in Godot" bug:
+// some source meshes have missing or only PARTIAL per-corner normal data
+// (common for procedurally generated / hand-exported OBJ, or a glTF primitive
+// with no NORMAL accessor at all). Previously the exporter silently filled
+// any missing normal with a hardcoded world-up vector [0,1,0] (see git of
+// earlier revisions) — a fixed, non-geometric vector baked straight into the
+// mesh data. That vector still gets rotated correctly by Godot's Node3D
+// transform like any other normal, but since it never represented the actual
+// face orientation to begin with, the lighting it produces has no relation to
+// which way that face is physically pointing — so it can look coincidentally
+// plausible at one rotation and obviously wrong at another. This pass
+// guarantees every face corner has a real, geometrically-correct normal
+// (computed from the actual triangle winding) before the object is ever
+// rendered or exported, and never touches a corner that already has valid
+// source data.
+function computeFaceNormal(positions, face){
+  const p0=positions[face[0].v], p1=positions[face[1].v], p2=positions[face[2].v];
+  const ux=p1[0]-p0[0], uy=p1[1]-p0[1], uz=p1[2]-p0[2];
+  const vx=p2[0]-p0[0], vy=p2[1]-p0[1], vz=p2[2]-p0[2];
+  let nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
+  const len = Math.hypot(nx,ny,nz);
+  if(len < 1e-12) return [0,1,0]; // degenerate/zero-area face — has ~no visible surface anyway
+  return [nx/len, ny/len, nz/len];
+}
+function ensureValidNormals(obj){
+  if(!obj.normals){
+    // Object had no normal data at all: give every face one correct flat
+    // normal derived from its own geometry, instead of leaving it to whatever
+    // engine imports the file next to guess.
+    const normals = [];
+    obj.faces.forEach((face,fi)=>{
+      normals.push(computeFaceNormal(obj.positions, face));
+      face.forEach(c=>{ c.vn = fi; });
+    });
+    obj.normals = normals;
+    return;
+  }
+  // Partial data: only the corners that are actually missing/invalid get a
+  // computed replacement; every corner that already has a real normal
+  // (e.g. authored smooth shading) is left completely untouched.
+  obj.faces.forEach((face,fi)=>{
+    const needsFix = face.some(c=>c.vn===null || !obj.normals[c.vn]);
+    if(!needsFix) return;
+    const n = computeFaceNormal(obj.positions, face);
+    const newIdx = obj.normals.length;
+    obj.normals.push(n);
+    face.forEach(c=>{ if(c.vn===null || !obj.normals[c.vn]) c.vn = newIdx; });
+  });
+}
+
+function objectsFromOBJ(text){
+  const parsed = parseOBJMulti(text);
+  const objs = parsed.groups.map(g=>{
+    const lookup = (corner)=> (corner.vt!==null && parsed.uvsOriginal[corner.vt]) ? parsed.uvsOriginal[corner.vt] : null;
+    const {uvs, cornerUVs} = buildIndependentUVs(g.faces, lookup);
+    return {
+      name: g.name, positions: parsed.positions, normals: parsed.normals.length ? parsed.normals : null,
+      faces: g.faces, cornerUVs, uvs, uvsOriginal: uvs.map(p=>p.slice()),
+      textureURL:null, texture:null,
+    };
+  });
+  const nodes = objs.map((o,i)=>({name:o.name, matrix:new THREE.Matrix4(), children:[], meshObjectIndex:i}));
+  return {objects:objs, gltfNodes:nodes, rootIndices: nodes.map((_,i)=>i)};
+}
+
+/* ============================= GLTF / GLB IMPORT ============================= */
+const COMPONENT_TYPES = {5120:{size:1,get:'getInt8'},5121:{size:1,get:'getUint8'},5122:{size:2,get:'getInt16'},5123:{size:2,get:'getUint16'},5125:{size:4,get:'getUint32'},5126:{size:4,get:'getFloat32'}};
+const TYPE_COMPONENTS = {SCALAR:1,VEC2:2,VEC3:3,VEC4:4,MAT2:4,MAT3:9,MAT4:16};
+
+function readAccessor(json, buffers, accessorIdx){
+  const acc = json.accessors[accessorIdx];
+  const numComp = TYPE_COMPONENTS[acc.type];
+  const compInfo = COMPONENT_TYPES[acc.componentType];
+  const count = acc.count;
+  const out = new Float32Array(count*numComp);
+  if(acc.bufferView === undefined) return out;
+  const bv = json.bufferViews[acc.bufferView];
+  const bufBytes = buffers[bv.buffer];
+  const dv = new DataView(bufBytes.buffer, bufBytes.byteOffset, bufBytes.byteLength);
+  const baseOffset = (bv.byteOffset||0) + (acc.byteOffset||0);
+  const stride = bv.byteStride || (numComp*compInfo.size);
+  for(let i=0;i<count;i++){
+    const elOffset = baseOffset + i*stride;
+    for(let c=0;c<numComp;c++){
+      const byteOff = elOffset + c*compInfo.size;
+      let val = dv[compInfo.get](byteOff, true);
+      if(acc.normalized){
+        if(acc.componentType===5121) val/=255;
+        else if(acc.componentType===5123) val/=65535;
+        else if(acc.componentType===5120) val=Math.max(val/127,-1);
+        else if(acc.componentType===5122) val=Math.max(val/32767,-1);
+      }
+      out[i*numComp+c] = val;
+    }
+  }
+  return out;
+}
+
+function parseGLB(arrayBuffer){
+  const dv = new DataView(arrayBuffer);
+  if(dv.getUint32(0,true) !== 0x46546C67) throw new Error('Bukan file GLB yang valid.');
+  const length = dv.getUint32(8,true);
+  let offset=12, json=null, bin=null;
+  while(offset < length){
+    const chunkLength = dv.getUint32(offset,true);
+    const chunkType = dv.getUint32(offset+4,true);
+    const start = offset+8;
+    if(chunkType===0x4E4F534A) json = JSON.parse(new TextDecoder('utf-8').decode(new Uint8Array(arrayBuffer,start,chunkLength)));
+    else if(chunkType===0x004E4942) bin = new Uint8Array(arrayBuffer, start, chunkLength);
+    offset = start + chunkLength;
+  }
+  if(!json) throw new Error('Chunk JSON tidak ditemukan di dalam GLB.');
+  return {json, bin};
+}
+
+function dataURItoBytes(uri){
+  const base64 = uri.split(',')[1];
+  const bin = atob(base64);
+  const arr = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+  return arr;
+}
+
+async function resolveBuffers(json, binChunk, extraFiles){
+  const out = [];
+  for(const buf of (json.buffers||[])){
+    if(buf.uri===undefined) out.push(binChunk);
+    else if(buf.uri.startsWith('data:')) out.push(dataURItoBytes(buf.uri));
+    else{
+      const name = decodeURIComponent(buf.uri.split('/').pop());
+      const file = extraFiles[name];
+      if(!file) throw new Error('File eksternal "'+name+'" tidak ditemukan. Pilih file .bin/tekstur terkait bersamaan.');
+      out.push(new Uint8Array(await file.arrayBuffer()));
+    }
+  }
+  return out;
+}
+
+async function resolveImageURL(json, buffers, imgIdx, extraFiles){
+  const img = json.images[imgIdx];
+  if(img.uri){
+    if(img.uri.startsWith('data:')) return img.uri;
+    const name = decodeURIComponent(img.uri.split('/').pop());
+    const file = extraFiles[name];
+    return file ? URL.createObjectURL(file) : null;
+  }
+  if(img.bufferView !== undefined){
+    const bv = json.bufferViews[img.bufferView];
+    const bytes = buffers[bv.buffer].slice((bv.byteOffset||0), (bv.byteOffset||0)+bv.byteLength);
+    return URL.createObjectURL(new Blob([bytes], {type: img.mimeType||'image/png'}));
+  }
+  return null;
+}
+
+function nodeLocalMatrix(node){
+  const m = new THREE.Matrix4();
+  if(node.matrix) m.fromArray(node.matrix);
+  else{
+    const t=node.translation||[0,0,0], r=node.rotation||[0,0,0,1], s=node.scale||[1,1,1];
+    m.compose(new THREE.Vector3(t[0],t[1],t[2]), new THREE.Quaternion(r[0],r[1],r[2],r[3]), new THREE.Vector3(s[0],s[1],s[2]));
+  }
+  return m;
+}
+
+async function buildFromGLTF(json, buffers, extraFiles){
+  const nodesOut = (json.nodes||[]).map(n=>({name:n.name||'Node', matrix:nodeLocalMatrix(n), children:(n.children||[]).slice(), meshObjectIndex:null}));
+  const objs = [];
+  const imageURLCache = {};
+  for(let ni=0; ni<(json.nodes||[]).length; ni++){
+    const n = json.nodes[ni];
+    if(n.mesh === undefined) continue;
+    const meshDef = json.meshes[n.mesh];
+    const primIdxs = [];
+    for(let pi=0; pi<meshDef.primitives.length; pi++){
+      const prim = meshDef.primitives[pi];
+      if(prim.attributes.POSITION === undefined) continue;
+      const posArr = readAccessor(json, buffers, prim.attributes.POSITION);
+      const normArr = prim.attributes.NORMAL!==undefined ? readAccessor(json, buffers, prim.attributes.NORMAL) : null;
+      const uvArr = prim.attributes.TEXCOORD_0!==undefined ? readAccessor(json, buffers, prim.attributes.TEXCOORD_0) : null;
+      const positions=[]; for(let i=0;i<posArr.length;i+=3) positions.push([posArr[i],posArr[i+1],posArr[i+2]]);
+      let normals=null;
+      if(normArr){ normals=[]; for(let i=0;i<normArr.length;i+=3) normals.push([normArr[i],normArr[i+1],normArr[i+2]]); }
+      let triIdx;
+      if(prim.indices !== undefined) triIdx = Array.from(readAccessor(json, buffers, prim.indices));
+      else triIdx = positions.map((_,i)=>i);
+      const faces=[];
+      for(let t=0;t<triIdx.length;t+=3){
+        faces.push([
+          {v:triIdx[t], vn: normals?triIdx[t]:null},
+          {v:triIdx[t+1], vn: normals?triIdx[t+1]:null},
+          {v:triIdx[t+2], vn: normals?triIdx[t+2]:null},
+        ]);
+      }
+      // NOTE on the V axis: glTF's TEXCOORD_0 spec uses V-down (0,0 = top-left of
+      // the image), while this editor's internal UV space (and OBJ files) use
+      // V-up (0,0 = bottom-left). Flip on read so imported UVs line up with our
+      // internal convention -- this is mirrored on export (see buildGLTFJSONAndBuffer)
+      // so a round-trip through this tool is lossless, and so the same texture
+      // orientation shows up whether the source/target is OBJ or GLTF/GLB.
+      const lookup = uvArr ? (c)=>[uvArr[c.v*2], 1 - uvArr[c.v*2+1]] : null;
+      const {uvs, cornerUVs} = buildIndependentUVs(faces, lookup);
+
+      let textureURL = null;
+      if(prim.material!==undefined && json.materials && json.materials[prim.material]){
+        const mat = json.materials[prim.material];
+        const bct = mat.pbrMetallicRoughness && mat.pbrMetallicRoughness.baseColorTexture;
+        if(bct && json.textures && json.textures[bct.index]){
+          const srcIdx = json.textures[bct.index].source;
+          if(srcIdx !== undefined){
+            if(imageURLCache[srcIdx]===undefined) imageURLCache[srcIdx] = await resolveImageURL(json, buffers, srcIdx, extraFiles);
+            textureURL = imageURLCache[srcIdx];
+          }
+        }
+      }
+      objs.push({
+        name: meshDef.primitives.length>1 ? (n.name||'Node')+'_'+pi : (n.name || meshDef.name || 'Object'),
+        positions, normals, faces, cornerUVs, uvs, uvsOriginal: uvs.map(p=>p.slice()),
+        textureURL, texture:null,
+      });
+      primIdxs.push(objs.length-1);
+    }
+    if(primIdxs.length===1) nodesOut[ni].meshObjectIndex = primIdxs[0];
+    else if(primIdxs.length>1){
+      nodesOut[ni].meshObjectIndex = primIdxs[0];
+      primIdxs.slice(1).forEach(oi=>{
+        nodesOut.push({name:objs[oi].name, matrix:new THREE.Matrix4(), children:[], meshObjectIndex:oi});
+        nodesOut[ni].children.push(nodesOut.length-1);
+      });
+    }
+  }
+  if(objs.length===0) throw new Error('Tidak ditemukan mesh (geometri) di dalam file ini.');
+  const sceneDef = json.scenes && json.scenes[json.scene||0];
+  const rootIdx = sceneDef && sceneDef.nodes ? sceneDef.nodes.slice() : nodesOut.map((_,i)=>i).filter(i=>!nodesOut.some(n=>n.children.includes(i)));
+  return {objects:objs, gltfNodes:nodesOut, rootIndices:rootIdx};
+}
+
+/* ============================= FILE LOADING DISPATCH ============================= */
+function loadResult(result){
+  objects = result.objects.map(o=>Object.assign(o, {undoStack:[], redoStack:[], threeMesh:null, renderCornerRefs:null, uvScale:1}));
+  objects.forEach(ensureValidNormals);
+  resetNumLive();
+  gltfNodes = result.gltfNodes;
+  rootIndices = result.rootIndices;
+  activeObjectIndex = 0;
+  mesh = objects[0];
+  selected = new Set();
+  uvBackgroundImage = null;
+  fitUVView();
+  buildThreeScene();
+  hydrateTextures();
+  populateObjectSelector();
+  syncUVScaleInput();
+  updateUI();
+  drawUV();
+  document.getElementById('emptyState').style.display = 'none';
+}
+
+document.getElementById('loadBtn').onclick = ()=>document.getElementById('fileInput').click();
+document.getElementById('fileInput').addEventListener('change', async (e)=>{
+  const files = Array.from(e.target.files);
+  if(files.length===0) return;
+  const main = files.find(f=>/\.(obj|glb|gltf)$/i.test(f.name)) || files[0];
+  const ext = main.name.split('.').pop().toLowerCase();
+  try{
+    let result;
+    if(ext==='obj'){
+      result = objectsFromOBJ(await main.text());
+    } else if(ext==='glb'){
+      const {json, bin} = parseGLB(await main.arrayBuffer());
+      const buffers = await resolveBuffers(json, bin, {});
+      result = await buildFromGLTF(json, buffers, {});
+    } else if(ext==='gltf'){
+      const json = JSON.parse(await main.text());
+      const extraFiles = {}; files.forEach(f=>{ if(f!==main) extraFiles[f.name]=f; });
+      const buffers = await resolveBuffers(json, null, extraFiles);
+      result = await buildFromGLTF(json, buffers, extraFiles);
+    } else{
+      throw new Error('Format tidak dikenali. Gunakan .obj, .glb, atau .gltf');
+    }
+    loadResult(result);
+  }catch(err){
+    alert('Gagal memuat file: ' + err.message);
+    console.error(err);
+  }
+  e.target.value = '';
+});
+
+/* ============================= TEXTURE ============================= */
+function loadImageFile(file){
+  return new Promise((resolve,reject)=>{
+    const img = new Image();
+    img.onload = ()=>{
+      const maxDim = 2048;
+      if(img.width>maxDim || img.height>maxDim){
+        const scale = maxDim/Math.max(img.width,img.height);
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width*scale); c.height = Math.round(img.height*scale);
+        c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+        const resized = new Image();
+        resized.onload = ()=>resolve(resized);
+        resized.src = c.toDataURL('image/png');
+      } else resolve(img);
+    };
+    img.onerror = ()=>reject(new Error('gambar tidak valid'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+function applyTextureToActiveObject(img){
+  const tex = new THREE.Texture(img);
+  tex.needsUpdate = true;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  mesh.texture = tex;
+  mesh.textureDataURL = null;
+  if(mesh.threeMesh){ mesh.threeMesh.material.map = tex; mesh.threeMesh.material.needsUpdate = true; }
+  uvBackgroundImage = img;
+  drawUV(); render3D();
+}
+
+document.getElementById('textureBtn').onclick = ()=>document.getElementById('textureInput').click();
+document.getElementById('textureInput').addEventListener('change', async (e)=>{
+  const file = e.target.files[0];
+  if(!file || !mesh) return;
+  try{ applyTextureToActiveObject(await loadImageFile(file)); }
+  catch(err){ alert('Gagal memuat gambar tekstur.'); }
+  e.target.value='';
+});
+
+document.getElementById('uvShowTexToggle').addEventListener('change', e=>{ uvShowTexture = e.target.checked; drawUV(); });
+
+function hydrateTextures(){
+  objects.forEach(obj=>{
+    if(obj.textureURL && !obj.texture){
+      const img = new Image();
+      img.onload = ()=>{
+        const tex = new THREE.Texture(img);
+        tex.needsUpdate = true; tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        obj.texture = tex;
+        if(obj.threeMesh){ obj.threeMesh.material.map = tex; obj.threeMesh.material.needsUpdate = true; render3D(); }
+        if(obj === mesh){ uvBackgroundImage = img; drawUV(); }
+      };
+      img.src = obj.textureURL;
+    }
+  });
+}
+
+function imageToDataURL(img){
+  const c = document.createElement('canvas');
+  c.width = img.naturalWidth || img.width; c.height = img.naturalHeight || img.height;
+  c.getContext('2d').drawImage(img,0,0);
+  return c.toDataURL('image/png');
+}
+
+/* ============================= 3D SCENE BUILD ============================= */
+let renderer, scene, camera, nodeGroups = [];
+let orbit = {theta:Math.PI/4, phi:Math.PI/3.2, radius:3, target:new THREE.Vector3(0,0,0)};
+
+function initThree(){
+  const canvas = document.getElementById('viewport3d');
+  renderer = new THREE.WebGLRenderer({canvas, antialias:!isMobileWidth(), preserveDrawingBuffer:true, alpha:false});
+  renderer.setPixelRatio(getPixelRatio());
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x1b1b1e);
+  camera = new THREE.PerspectiveCamera(45, 1, 0.01, 2000);
+  updateCameraFromOrbit();
+  attach3DPointerHandlers(canvas);
+}
+
+function getPixelRatio(){ return Math.min(window.devicePixelRatio||1, isMobileWidth()?1.5:2); }
+
+function updateCameraFromOrbit(){
+  const {theta,phi,radius,target} = orbit;
+  camera.position.set(
+    target.x + radius*Math.sin(phi)*Math.cos(theta),
+    target.y + radius*Math.cos(phi),
+    target.z + radius*Math.sin(phi)*Math.sin(theta)
+  );
+  camera.lookAt(target);
+}
+
+function makeCheckerTexture(){
+  const size=512, n=8;
+  const c = document.createElement('canvas'); c.width=size; c.height=size;
+  const ctx = c.getContext('2d');
+  const cell = size/n;
+  for(let i=0;i<n;i++) for(let j=0;j<n;j++){
+    ctx.fillStyle = (i+j)%2===0 ? '#d8722f' : '#e9e4da';
+    ctx.fillRect(i*cell, j*cell, cell, cell);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+function getDefaultCheckerTexture(){ if(!_defaultChecker) _defaultChecker = makeCheckerTexture(); return _defaultChecker; }
+
+function buildRenderArrays(obj){
+  const positions=[], uvArr=[], normArr = obj.normals ? [] : null;
+  const refs=[];
+  obj.faces.forEach((face,fi)=>{
+    const n=face.length; const idxs = obj.cornerUVs[fi];
+    for(let i=1;i<n-1;i++){
+      [0,i,i+1].forEach(ci=>{
+        const p = obj.positions[face[ci].v];
+        positions.push(p[0],p[1],p[2]);
+        const uv = obj.uvs[idxs[ci]];
+        uvArr.push(uv[0],uv[1]);
+        if(normArr){
+          const vn = face[ci].vn;
+          // ensureValidNormals() (run once at load time) guarantees every corner
+          // has a valid vn already; this is only a last-resort safety net.
+          const nn = (vn!==null && obj.normals[vn]) ? obj.normals[vn] : computeFaceNormal(obj.positions, face);
+          normArr.push(nn[0],nn[1],nn[2]);
+        }
+        refs.push({fi,ci});
+      });
+    }
+  });
+  obj.renderCornerRefs = refs;
+  return {positions, uvArr, normArr};
+}
+
+function buildThreeScene(){
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x1b1b1e);
+  nodeGroups = gltfNodes.map(n=>{
+    const g = new THREE.Group();
+    g.matrix.copy(n.matrix); g.matrixAutoUpdate = false; g.name = n.name;
+    return g;
+  });
+  gltfNodes.forEach((n,i)=>{ (n.children||[]).forEach(ci=>{ if(nodeGroups[ci]) nodeGroups[i].add(nodeGroups[ci]); }); });
+  rootIndices.forEach(ri=>{ if(nodeGroups[ri]) scene.add(nodeGroups[ri]); });
+
+  objects.forEach((obj,oi)=>{
+    if(obj.threeMesh){ obj.threeMesh.geometry.dispose(); }
+    const {positions, uvArr, normArr} = buildRenderArrays(obj);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvArr,2));
+    if(normArr) geo.setAttribute('normal', new THREE.Float32BufferAttribute(normArr,3));
+    else geo.computeVertexNormals();
+
+    const tex = obj.texture || getDefaultCheckerTexture();
+    const mat = new THREE.MeshBasicMaterial({map:tex, side:THREE.DoubleSide});
+    const tm = new THREE.Mesh(geo, mat);
+    obj.threeMesh = tm;
+    updateThreeUVAttribute(obj); // bake in obj.uvScale (tiling multiplier) for the initial display
+
+    const wire = new THREE.LineSegments(new THREE.WireframeGeometry(geo), new THREE.LineBasicMaterial({color:0x000000, transparent:true, opacity:0.15}));
+
+    const nodeIdx = gltfNodes.findIndex(n=>n.meshObjectIndex===oi);
+    const parentGroup = nodeIdx>=0 ? nodeGroups[nodeIdx] : scene;
+    parentGroup.add(tm); parentGroup.add(wire);
+  });
+
+  scene.updateMatrixWorld(true);
+  const worldBox = new THREE.Box3();
+  let any=false;
+  objects.forEach(obj=>{
+    if(!obj.threeMesh) return;
+    obj.threeMesh.geometry.computeBoundingBox();
+    const bb = obj.threeMesh.geometry.boundingBox.clone();
+    if(bb.isEmpty()) return;
+    bb.applyMatrix4(obj.threeMesh.matrixWorld);
+    worldBox.union(bb); any=true;
+  });
+  if(any){
+    const sphere = new THREE.Sphere();
+    worldBox.getBoundingSphere(sphere);
+    orbit.target.copy(sphere.center);
+    orbit.radius = Math.max(0.4, sphere.radius*2.4);
+  }
+  updateCameraFromOrbit();
+  updateOverlay();
+  render3D();
+}
+
+function updateThreeUVAttribute(obj){
+  obj = obj || mesh;
+  if(!obj || !obj.threeMesh) return;
+  const uvAttr = obj.threeMesh.geometry.getAttribute('uv');
+  const refs = obj.renderCornerRefs;
+  // uvScale is a display/export-time tiling multiplier only — it is applied here
+  // (and at export) but never written back into obj.uvs, so every existing
+  // per-face move/scale/rotate/undo feature keeps operating on the untouched
+  // base UV layout exactly as before.
+  const s = (obj.uvScale===undefined || obj.uvScale===null) ? 1 : obj.uvScale;
+  for(let k=0;k<refs.length;k++){
+    const {fi,ci} = refs[k];
+    const uv = obj.uvs[obj.cornerUVs[fi][ci]];
+    uvAttr.setXY(k, uv[0]*s, uv[1]*s);
+  }
+  uvAttr.needsUpdate = true;
+}
+
+function updateOverlay(){
+  if(overlayMesh){ if(overlayMesh.parent) overlayMesh.parent.remove(overlayMesh); overlayMesh.geometry.dispose(); overlayMesh=null; }
+  if(!mesh || selected.size===0 || !mesh.threeMesh) return;
+  const positions=[];
+  mesh.faces.forEach((face,fi)=>{
+    if(!selected.has(fi)) return;
+    const n=face.length;
+    for(let i=1;i<n-1;i++){
+      [0,i,i+1].forEach(ci=>{ const p=mesh.positions[face[ci].v]; positions.push(p[0],p[1],p[2]); });
+    }
+  });
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
+  const mat = new THREE.MeshBasicMaterial({color:0xe8823a, transparent:true, opacity:0.5, side:THREE.DoubleSide, depthTest:true, polygonOffset:true, polygonOffsetFactor:-4});
+  overlayMesh = new THREE.Mesh(geo, mat);
+  mesh.threeMesh.parent.add(overlayMesh);
+}
+
+function render3D(){ if(renderer && scene && camera) renderer.render(scene, camera); }
+
+/* ============================= 3D POINTER: ORBIT / PAN / PINCH / TAP-PICK ============================= */
+const raycaster = new THREE.Raycaster();
+let v3Pointers = new Map();
+let v3DragMoved = false, v3DownTime = 0, v3Last = null, v3PinchStart = null;
+
+function panOrbit(dx, dy){
+  const panSpeed = orbit.radius * 0.0018;
+  const forward = new THREE.Vector3(); camera.getWorldDirection(forward);
+  const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+  const up = new THREE.Vector3().crossVectors(right, forward).normalize();
+  orbit.target.addScaledVector(right, -dx*panSpeed);
+  orbit.target.addScaledVector(up, dy*panSpeed);
+}
+
+function pickFaceAt(clientX, clientY, rect){
+  const nx = ((clientX-rect.left)/rect.width)*2-1;
+  const ny = -((clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera({x:nx,y:ny}, camera);
+  const meshList = objects.map(o=>o.threeMesh).filter(Boolean);
+  const hits = raycaster.intersectObjects(meshList, false);
+  if(hits.length===0) return null;
+  const hit = hits[0];
+  const objIndex = objects.findIndex(o=>o.threeMesh===hit.object);
+  if(objIndex<0) return null;
+  const obj = objects[objIndex];
+  const ref = obj.renderCornerRefs[hit.faceIndex*3];
+  if(!ref) return null;
+  return {objIndex, faceIndex: ref.fi};
+}
+
+function handle3DTap(e){
+  if(!mesh) return;
+  endNumSession();
+  const rect = document.getElementById('viewport3d').getBoundingClientRect();
+  const result = pickFaceAt(e.clientX, e.clientY, rect);
+  if(!result){ if(!e.shiftKey){ selected.clear(); updateUI(); drawUV(); render3D(); } return; }
+  if(result.objIndex !== activeObjectIndex){
+    activeObjectIndex = result.objIndex;
+    mesh = objects[activeObjectIndex];
+    selected.clear();
+    fitUVView();
+    uvBackgroundImage = mesh.texture ? mesh.texture.image : null;
+    populateObjectSelector();
+  }
+  if(e.shiftKey){ if(selected.has(result.faceIndex)) selected.delete(result.faceIndex); else selected.add(result.faceIndex); }
+  else selected = new Set([result.faceIndex]);
+  updateUI(); drawUV(); render3D();
+}
+
+function attach3DPointerHandlers(canvas){
+  canvas.addEventListener('contextmenu', e=>e.preventDefault());
+  canvas.addEventListener('pointerdown', e=>{
+    canvas.setPointerCapture(e.pointerId);
+    v3Pointers.set(e.pointerId, {x:e.clientX,y:e.clientY});
+    v3DragMoved=false; v3DownTime = performance.now();
+    if(v3Pointers.size===1){ v3Last = {x:e.clientX,y:e.clientY}; }
+    else if(v3Pointers.size===2){
+      const pts = Array.from(v3Pointers.values());
+      v3PinchStart = {dist:Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y), mid:{x:(pts[0].x+pts[1].x)/2,y:(pts[0].y+pts[1].y)/2}, radius:orbit.radius, target:orbit.target.clone()};
+    }
+  });
+  canvas.addEventListener('pointermove', e=>{
+    if(!v3Pointers.has(e.pointerId)) return;
+    v3Pointers.set(e.pointerId, {x:e.clientX,y:e.clientY});
+    if(v3Pointers.size===1){
+      const dx=e.clientX-v3Last.x, dy=e.clientY-v3Last.y;
+      if(Math.hypot(dx,dy)>3) v3DragMoved=true;
+      v3Last = {x:e.clientX,y:e.clientY};
+      if(e.buttons===2 || e.shiftKey) panOrbit(dx,dy);
+      else{ orbit.theta -= dx*0.008; orbit.phi = Math.min(Math.PI-0.05, Math.max(0.05, orbit.phi - dy*0.008)); }
+      updateCameraFromOrbit(); render3D();
+    } else if(v3Pointers.size===2 && v3PinchStart){
+      v3DragMoved = true;
+      const pts = Array.from(v3Pointers.values());
+      const dist = Math.max(1, Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y));
+      const mid = {x:(pts[0].x+pts[1].x)/2, y:(pts[0].y+pts[1].y)/2};
+      orbit.radius = Math.min(80, Math.max(0.1, v3PinchStart.radius * (v3PinchStart.dist/dist)));
+      orbit.target.copy(v3PinchStart.target);
+      panOrbit(-(mid.x-v3PinchStart.mid.x), -(mid.y-v3PinchStart.mid.y));
+      updateCameraFromOrbit(); render3D();
+    }
+  });
+  function end(e){
+    const wasSingle = v3Pointers.size===1;
+    const dt = performance.now()-v3DownTime;
+    v3Pointers.delete(e.pointerId);
+    if(wasSingle && !v3DragMoved && dt<450) handle3DTap(e);
+    if(v3Pointers.size===1) v3Last = Array.from(v3Pointers.values())[0];
+    if(v3Pointers.size<2) v3PinchStart = null;
+  }
+  canvas.addEventListener('pointerup', end);
+  canvas.addEventListener('pointercancel', end);
+  canvas.addEventListener('wheel', e=>{
+    e.preventDefault();
+    orbit.radius = Math.min(80, Math.max(0.1, orbit.radius*(e.deltaY<0?0.9:1.1)));
+    updateCameraFromOrbit(); render3D();
+  }, {passive:false});
+}
+
+/* ============================= UV 2D EDITOR ============================= */
+const uvCanvas = document.getElementById('uvCanvas');
+const uvCtx = uvCanvas.getContext('2d');
+
+function fitUVView(){ uvView = {minU:-0.5, minV:-0.5, span:2.0, zoom:1, panX:0, panY:0}; }
+
+function uvToCanvas(u,v){
+  const w=uvCanvas.width, h=uvCanvas.height, size=Math.min(w,h);
+  const span = uvView.span/uvView.zoom;
+  const minU = uvView.minU+uvView.panX, minV = uvView.minV+uvView.panY;
+  const x = ((u-minU)/span)*size + (w-size)/2;
+  const y = h - (((v-minV)/span)*size + (h-size)/2);
+  return [x,y];
+}
+function canvasToUV(x,y){
+  const w=uvCanvas.width, h=uvCanvas.height, size=Math.min(w,h);
+  const span = uvView.span/uvView.zoom;
+  const minU = uvView.minU+uvView.panX, minV = uvView.minV+uvView.panY;
+  const u = ((x-(w-size)/2)/size)*span + minU;
+  const v = ((h-y-(h-size)/2)/size)*span + minV;
+  return [u,v];
+}
+function faceCentroidUV(fi){
+  const idxs = mesh.cornerUVs[fi]; let su=0,sv=0;
+  idxs.forEach(i=>{ su+=mesh.uvs[i][0]; sv+=mesh.uvs[i][1]; });
+  return [su/idxs.length, sv/idxs.length];
+}
+function selectionBBox(){
+  let minU=Infinity,minV=Infinity,maxU=-Infinity,maxV=-Infinity;
+  selected.forEach(fi=>{ mesh.cornerUVs[fi].forEach(i=>{
+    const [u,v]=mesh.uvs[i];
+    if(u<minU)minU=u; if(u>maxU)maxU=u; if(v<minV)minV=v; if(v>maxV)maxV=v;
+  }); });
+  if(minU===Infinity) return null;
+  return {minU,minV,maxU,maxV,cx:(minU+maxU)/2,cy:(minV+maxV)/2};
+}
+
+function drawUV(){
+  const w=uvCanvas.width, h=uvCanvas.height;
+  uvCtx.clearRect(0,0,w,h);
+  uvCtx.fillStyle='#1f1f22'; uvCtx.fillRect(0,0,w,h);
+  if(!mesh) return;
+
+  if(uvShowTexture && uvBackgroundImage){
+    const [x0,y0]=uvToCanvas(0,1), [x1,y1]=uvToCanvas(1,0);
+    uvCtx.drawImage(uvBackgroundImage, x0, y0, x1-x0, y1-y0);
+  } else {
+    const steps=8;
+    for(let i=0;i<steps;i++) for(let j=0;j<steps;j++){
+      uvCtx.fillStyle = (i+j)%2===0 ? '#2a2a2e' : '#313135';
+      const [x0,y0]=uvToCanvas(i/steps,(j+1)/steps), [x1,y1]=uvToCanvas((i+1)/steps,j/steps);
+      uvCtx.fillRect(x0,y0,x1-x0,y1-y0);
+    }
+  }
+  const [ux0,uy0]=uvToCanvas(0,1), [ux1,uy1]=uvToCanvas(1,0);
+  uvCtx.strokeStyle='#6b6b70'; uvCtx.lineWidth=1.5;
+  uvCtx.strokeRect(ux0,uy0,ux1-ux0,uy1-uy0);
+
+  mesh.faces.forEach((face,fi)=>{
+    const idxs = mesh.cornerUVs[fi];
+    uvCtx.beginPath();
+    idxs.forEach((ci,k)=>{ const [x,y]=uvToCanvas(mesh.uvs[ci][0],mesh.uvs[ci][1]); if(k===0) uvCtx.moveTo(x,y); else uvCtx.lineTo(x,y); });
+    uvCtx.closePath();
+    const isSel = selected.has(fi);
+    uvCtx.fillStyle = isSel ? 'rgba(232,130,58,0.35)' : 'rgba(140,180,255,0.06)';
+    uvCtx.fill();
+    uvCtx.strokeStyle = isSel ? '#e8823a' : '#7c8894';
+    uvCtx.lineWidth = isSel ? 2 : 1;
+    uvCtx.stroke();
+  });
+
+  const bbox = selectionBBox();
+  if(bbox){
+    const corners = [[bbox.minU,bbox.minV],[bbox.maxU,bbox.minV],[bbox.maxU,bbox.maxV],[bbox.minU,bbox.maxV]];
+    uvCtx.strokeStyle='#e8823a'; uvCtx.lineWidth=1; uvCtx.setLineDash([4,4]);
+    uvCtx.beginPath();
+    corners.forEach(([u,v],k)=>{ const [x,y]=uvToCanvas(u,v); if(k===0) uvCtx.moveTo(x,y); else uvCtx.lineTo(x,y); });
+    uvCtx.closePath(); uvCtx.stroke(); uvCtx.setLineDash([]);
+    drawGizmo(bbox);
+  }
+  if(dragMode==='boxselect' && boxRect){
+    uvCtx.strokeStyle='#e8823a'; uvCtx.fillStyle='rgba(232,130,58,0.12)'; uvCtx.setLineDash([3,3]);
+    uvCtx.strokeRect(boxRect.x,boxRect.y,boxRect.w,boxRect.h);
+    uvCtx.fillRect(boxRect.x,boxRect.y,boxRect.w,boxRect.h);
+    uvCtx.setLineDash([]);
+  }
+}
+
+function pointInPolygon(px,py,pts){
+  let inside=false;
+  for(let i=0,j=pts.length-1;i<pts.length;j=i++){
+    const xi=pts[i][0],yi=pts[i][1],xj=pts[j][0],yj=pts[j][1];
+    if(((yi>py)!==(yj>py)) && (px < (xj-xi)*(py-yi)/(yj-yi)+xi)) inside=!inside;
+  }
+  return inside;
+}
+function hitTestFace(px,py){
+  for(let fi=mesh.faces.length-1; fi>=0; fi--){
+    const pts = mesh.cornerUVs[fi].map(ci=>uvToCanvas(mesh.uvs[ci][0],mesh.uvs[ci][1]));
+    if(pointInPolygon(px,py,pts)) return fi;
+  }
+  return null;
+}
+/* ---------- gizmo geometry / drawing / hit-testing ----------
+   Ukuran gizmo dipatok dalam CSS px (dikali dpr kanvas) supaya ukurannya sama
+   nyamannya di layar HP maupun desktop, dan tidak ikut membesar saat zoom UV. */
+function gizmoGeom(bbox){
+  const k = uvCanvasDPR;
+  const minDim = Math.min(uvCanvas.width, uvCanvas.height) / k;
+  const armCss = Math.max(42, Math.min(60, minDim * 0.2));
+  const [cx, cy] = uvToCanvas(bbox.cx, bbox.cy);
+  return { k, cx, cy, arm: armCss*k, ring: armCss*k*0.92,
+    hitAxis: GIZMO_HIT_AXIS_CSS*k, hitCenter: GIZMO_HIT_CENTER_CSS*k, hitRing: GIZMO_HIT_RING_CSS*k };
+}
+
+function drawGizmoArrow(x0,y0,x1,y1,color,k){
+  const ang = Math.atan2(y1-y0, x1-x0), dx = Math.cos(ang), dy = Math.sin(ang);
+  const hl = 14*k, hw = 8*k;
+  const bx = x1 - dx*hl*0.5, by = y1 - dy*hl*0.5;   // pangkal kepala panah
+  const tx = x1 + dx*hl*0.5, ty = y1 + dy*hl*0.5;   // ujung panah
+  uvCtx.lineCap = 'round'; uvCtx.lineJoin = 'round';
+  uvCtx.strokeStyle = 'rgba(20,18,12,0.85)'; uvCtx.lineWidth = 5.5*k;
+  uvCtx.beginPath(); uvCtx.moveTo(x0,y0); uvCtx.lineTo(bx,by); uvCtx.stroke();
+  uvCtx.strokeStyle = color; uvCtx.lineWidth = 3*k;
+  uvCtx.beginPath(); uvCtx.moveTo(x0,y0); uvCtx.lineTo(bx,by); uvCtx.stroke();
+  uvCtx.beginPath(); uvCtx.moveTo(tx,ty); uvCtx.lineTo(bx-dy*hw, by+dx*hw); uvCtx.lineTo(bx+dy*hw, by-dx*hw); uvCtx.closePath();
+  uvCtx.fillStyle = color; uvCtx.fill();
+  uvCtx.strokeStyle = '#1b1204'; uvCtx.lineWidth = 1.5*k; uvCtx.stroke();
+}
+
+function drawGizmo(bbox){
+  const g = gizmoGeom(bbox), k = g.k, ctx = uvCtx;
+  ctx.save();
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if(gizmoMode==='position'){
+    drawGizmoArrow(g.cx, g.cy, g.cx+g.arm, g.cy, AXIS_X_COLOR, k);   // X (merah)
+    drawGizmoArrow(g.cx, g.cy, g.cx, g.cy-g.arm, AXIS_Y_COLOR, k);   // Y (hijau)
+    const r = 11*k;
+    ctx.beginPath(); ctx.arc(g.cx, g.cy, r, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(27,27,30,0.8)'; ctx.fill();
+    ctx.strokeStyle = '#e8823a'; ctx.lineWidth = 2*k; ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(g.cx-r*0.5, g.cy); ctx.lineTo(g.cx+r*0.5, g.cy);
+    ctx.moveTo(g.cx, g.cy-r*0.5); ctx.lineTo(g.cx, g.cy+r*0.5);
+    ctx.stroke();
+  } else if(gizmoMode==='rotate'){
+    ctx.beginPath(); ctx.arc(g.cx, g.cy, g.ring, 0, Math.PI*2);
+    ctx.strokeStyle = 'rgba(20,18,12,0.8)'; ctx.lineWidth = 6*k; ctx.stroke();
+    ctx.strokeStyle = '#e8823a'; ctx.lineWidth = 3*k; ctx.stroke();
+    ctx.beginPath(); ctx.arc(g.cx, g.cy-g.ring, 9*k, 0, Math.PI*2);
+    ctx.fillStyle = '#e8823a'; ctx.fill();
+    ctx.strokeStyle = '#1b1204'; ctx.lineWidth = 1.5*k; ctx.stroke();
+    ctx.beginPath(); ctx.arc(g.cx, g.cy, 3*k, 0, Math.PI*2);
+    ctx.fillStyle = '#e8823a'; ctx.fill();
+  } else{ // scale
+    const hs = HANDLE_DRAW_SIZE;
+    const corners = [[bbox.minU,bbox.minV],[bbox.maxU,bbox.minV],[bbox.maxU,bbox.maxV],[bbox.minU,bbox.maxV]];
+    ctx.fillStyle = '#e8823a'; ctx.strokeStyle = '#1b1204'; ctx.lineWidth = 1.5;
+    corners.forEach(([u,v])=>{ const [x,y]=uvToCanvas(u,v); ctx.fillRect(x-hs/2,y-hs/2,hs,hs); ctx.strokeRect(x-hs/2,y-hs/2,hs,hs); });
+    const dg = g.arm*Math.SQRT1_2;
+    const pts = [
+      [g.cx+g.arm, g.cy,    AXIS_X_COLOR],
+      [g.cx,       g.cy-g.arm, AXIS_Y_COLOR],
+      [g.cx+dg,    g.cy-dg, '#e8823a'],
+    ];
+    ctx.strokeStyle = 'rgba(232,130,58,0.75)'; ctx.lineWidth = 1.5*k;
+    ctx.beginPath();
+    pts.forEach(p=>{ ctx.moveTo(g.cx,g.cy); ctx.lineTo(p[0],p[1]); });
+    ctx.stroke();
+    const s = 8*k;
+    pts.forEach(([x,y,col])=>{
+      ctx.fillStyle = col; ctx.fillRect(x-s,y-s,2*s,2*s);
+      ctx.strokeStyle = '#1b1204'; ctx.lineWidth = 1.5*k; ctx.strokeRect(x-s,y-s,2*s,2*s);
+    });
+    ctx.beginPath(); ctx.arc(g.cx, g.cy, 3*k, 0, Math.PI*2);
+    ctx.fillStyle = '#e8823a'; ctx.fill();
+  }
+  ctx.restore();
+}
+
+function nearestHit(px,py,cands){
+  let best=null, bd=Infinity;
+  cands.forEach(c=>{ const d=Math.hypot(px-c.x,py-c.y); if(d<c.r && d<bd){ bd=d; best=c.hit; } });
+  return best;
+}
+
+function hitTestHandle(px,py){
+  const bbox = selectionBBox();
+  if(!bbox) return null;
+  const g = gizmoGeom(bbox);
+  if(gizmoMode==='position'){
+    return nearestHit(px,py,[
+      {x:g.cx+g.arm, y:g.cy,       r:g.hitAxis,   hit:{type:'moveX'}},
+      {x:g.cx,       y:g.cy-g.arm, r:g.hitAxis,   hit:{type:'moveY'}},
+      {x:g.cx,       y:g.cy,       r:g.hitCenter, hit:{type:'move'}},
+    ]);
+  }
+  if(gizmoMode==='rotate'){
+    const d = Math.hypot(px-g.cx, py-g.cy);
+    return Math.abs(d-g.ring) < g.hitRing ? {type:'rotate'} : null;
+  }
+  // scale: tiga gagang gizmo (X, Y, proporsional) + gagang sudut bbox (proporsional)
+  const dg = g.arm*Math.SQRT1_2;
+  const hit = nearestHit(px,py,[
+    {x:g.cx+g.arm, y:g.cy,       r:g.hitAxis, hit:{type:'scaleX'}},
+    {x:g.cx,       y:g.cy-g.arm, r:g.hitAxis, hit:{type:'scaleY'}},
+    {x:g.cx+dg,    y:g.cy-dg,    r:g.hitAxis, hit:{type:'scale', name:'diag'}},
+  ]);
+  if(hit) return hit;
+  const corners = [['tl',bbox.minU,bbox.maxV],['tr',bbox.maxU,bbox.maxV],['br',bbox.maxU,bbox.minV],['bl',bbox.minU,bbox.minV]];
+  for(const [name,u,v] of corners){
+    const [x,y]=uvToCanvas(u,v);
+    if(Math.hypot(px-x,py-y)<HANDLE_HIT_RADIUS) return {type:'scale', name};
+  }
+  return null;
+}
+
+const CORNER_CURSOR = {tl:'nwse-resize', br:'nwse-resize', tr:'nesw-resize', bl:'nesw-resize', diag:'nesw-resize'};
+const HANDLE_CURSOR = {scale:null, scaleX:'ew-resize', scaleY:'ns-resize', rotate:'grab', move:'move', moveX:'ew-resize', moveY:'ns-resize'};
+function updateHoverCursor(pos){
+  if(!mesh){ uvCanvas.style.cursor='default'; return; }
+  const [px,py] = pos;
+  if(selected.size>0){
+    const handle = hitTestHandle(px,py);
+    if(handle){
+      uvCanvas.style.cursor = handle.type==='scale' ? CORNER_CURSOR[handle.name] : HANDLE_CURSOR[handle.type];
+      return;
+    }
+  }
+  const hitFace = hitTestFace(px,py);
+  if(hitFace!==null){ uvCanvas.style.cursor = selected.has(hitFace) ? 'move' : 'pointer'; return; }
+  uvCanvas.style.cursor = 'crosshair';
+}
+
+let dragMode=null, dragStartPx=null, dragSnapshot=null, dragCenter=null, dragStartVec=null;
+let boxRect=null, boxAdditive=false;
+let uvPointers = new Map(), uvPinchStart = null;
+
+function snapshotSelectedUVs(){
+  const map = new Map();
+  selected.forEach(fi=>{ mesh.cornerUVs[fi].forEach(idx=>map.set(idx, mesh.uvs[idx].slice())); });
+  return map;
+}
+function getEventPos(e){
+  const rect = uvCanvas.getBoundingClientRect();
+  // IMPORTANT: must use the SAME dpr the canvas buffer was actually sized with
+  // (uvCanvasDPR, capped for mobile), not the raw window.devicePixelRatio.
+  // Using the raw value here caused touch/mouse coordinates to drift away from
+  // the drawn handles on capped-dpr (mobile) screens, making the tiny
+  // scale/rotate handles miss almost every tap.
+  return [(e.clientX-rect.left)*uvCanvasDPR, (e.clientY-rect.top)*uvCanvasDPR];
+}
+
+uvCanvas.addEventListener('pointerdown', e=>{
+  if(!mesh) return;
+  endNumSession();
+  uvCanvas.setPointerCapture(e.pointerId);
+  uvPointers.set(e.pointerId, {x:e.clientX,y:e.clientY});
+  if(uvPointers.size===2){
+    dragMode=null; boxRect=null; dragSnapshot=null;
+    const pts = Array.from(uvPointers.values());
+    uvPinchStart = {dist:Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y), mid:{x:(pts[0].x+pts[1].x)/2,y:(pts[0].y+pts[1].y)/2}, zoom:uvView.zoom, panX:uvView.panX, panY:uvView.panY};
+    return;
+  }
+  if(uvPointers.size>2) return;
+
+  const [px,py] = getEventPos(e);
+  dragStartPx = [px,py];
+
+  if(selected.size>0){
+    const handle = hitTestHandle(px,py);
+    if(handle){
+      pushUndo();
+      const bbox = selectionBBox();
+      dragSnapshot = snapshotSelectedUVs();
+      dragCenter = [bbox.cx, bbox.cy];
+      const startUV = canvasToUV(px,py);
+      dragStartVec = [startUV[0]-dragCenter[0], startUV[1]-dragCenter[1]];
+      dragMode = handle.type; // 'scale' | 'scaleX' | 'scaleY' | 'rotate' | 'move' | 'moveX' | 'moveY'
+      if(dragMode==='move') dragMode='translate';
+      else if(dragMode==='moveX') dragMode='translateX';
+      else if(dragMode==='moveY') dragMode='translateY';
+      uvCanvas.style.cursor = dragMode==='scale' ? CORNER_CURSOR[handle.name]
+        : dragMode==='rotate' ? 'grabbing' : (HANDLE_CURSOR[handle.type] || 'move');
+      return;
+    }
+  }
+  const hitFace = hitTestFace(px,py);
+  if(hitFace!==null){
+    if(e.shiftKey){ if(selected.has(hitFace)) selected.delete(hitFace); else selected.add(hitFace); }
+    else if(!selected.has(hitFace)) selected = new Set([hitFace]);
+    if(selected.has(hitFace)){ pushUndo(); dragMode='translate'; dragSnapshot = snapshotSelectedUVs(); }
+  } else{
+    if(!e.shiftKey) selected.clear();
+    dragMode='boxselect'; boxAdditive=e.shiftKey; boxRect={x:px,y:py,w:0,h:0};
+  }
+  updateUI(); drawUV(); updateOverlay(); render3D();
+});
+
+uvCanvas.addEventListener('pointermove', e=>{
+  if(!mesh) return;
+  if(uvPointers.has(e.pointerId)) uvPointers.set(e.pointerId, {x:e.clientX,y:e.clientY});
+
+  if(uvPointers.size===2 && uvPinchStart){
+    const pts = Array.from(uvPointers.values());
+    const dist = Math.max(1, Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y));
+    const mid = {x:(pts[0].x+pts[1].x)/2, y:(pts[0].y+pts[1].y)/2};
+    uvView.zoom = Math.min(20, Math.max(0.15, uvPinchStart.zoom * (dist/uvPinchStart.dist)));
+    const dpr = window.devicePixelRatio||1;
+    const dxCanvas = (mid.x-uvPinchStart.mid.x)*dpr, dyCanvas = (mid.y-uvPinchStart.mid.y)*dpr;
+    const span_eff = uvView.span/uvView.zoom;
+    const size = Math.min(uvCanvas.width, uvCanvas.height);
+    uvView.panX = uvPinchStart.panX - dxCanvas*span_eff/size;
+    uvView.panY = uvPinchStart.panY + dyCanvas*span_eff/size;
+    drawUV();
+    return;
+  }
+  if(!dragMode){
+    if(e.pointerType==='mouse') updateHoverCursor(getEventPos(e));
+    return;
+  }
+  const [px,py] = getEventPos(e);
+
+  if(dragMode==='translate' || dragMode==='translateX' || dragMode==='translateY'){
+    const [u0,v0]=canvasToUV(dragStartPx[0],dragStartPx[1]);
+    const [u1,v1]=canvasToUV(px,py);
+    let du=u1-u0, dv=v1-v0;
+    if(dragMode==='translateX') dv=0;       // gizmo panah merah: hanya sumbu X
+    else if(dragMode==='translateY') du=0;  // gizmo panah hijau: hanya sumbu Y
+    dragSnapshot.forEach((val,idx)=>{ mesh.uvs[idx][0]=val[0]+du; mesh.uvs[idx][1]=val[1]+dv; });
+  } else if(dragMode==='scale' || dragMode==='scaleX' || dragMode==='scaleY'){
+    const curUV = canvasToUV(px,py);
+    const curVec = [curUV[0]-dragCenter[0], curUV[1]-dragCenter[1]];
+    if(dragMode==='scale'){
+      const startLen = Math.max(1e-6, Math.hypot(dragStartVec[0],dragStartVec[1]));
+      const factor = Math.hypot(curVec[0],curVec[1]) / startLen;
+      liveFx = factor; liveFy = factor;
+      dragSnapshot.forEach((val,idx)=>{
+        mesh.uvs[idx][0]=dragCenter[0]+(val[0]-dragCenter[0])*factor;
+        mesh.uvs[idx][1]=dragCenter[1]+(val[1]-dragCenter[1])*factor;
+      });
+    } else if(dragMode==='scaleX'){
+      const denom = Math.abs(dragStartVec[0])<1e-6 ? 1e-6 : dragStartVec[0];
+      const factor = curVec[0]/denom;
+      liveFx = factor; liveFy = 1;
+      dragSnapshot.forEach((val,idx)=>{ mesh.uvs[idx][0]=dragCenter[0]+(val[0]-dragCenter[0])*factor; });
+    } else{ // scaleY
+      const denom = Math.abs(dragStartVec[1])<1e-6 ? 1e-6 : dragStartVec[1];
+      const factor = curVec[1]/denom;
+      liveFy = factor; liveFx = 1;
+      dragSnapshot.forEach((val,idx)=>{ mesh.uvs[idx][1]=dragCenter[1]+(val[1]-dragCenter[1])*factor; });
+    }
+  } else if(dragMode==='rotate'){
+    const curUV = canvasToUV(px,py);
+    const curVec = [curUV[0]-dragCenter[0], curUV[1]-dragCenter[1]];
+    const startAngle = Math.atan2(dragStartVec[1], dragStartVec[0]);
+    const curAngle = Math.atan2(curVec[1], curVec[0]);
+    const delta = curAngle - startAngle;
+    liveRotDeg = normalizeDeg(delta*180/Math.PI);
+    const cos=Math.cos(delta), sin=Math.sin(delta);
+    dragSnapshot.forEach((val,idx)=>{
+      const du=val[0]-dragCenter[0], dv=val[1]-dragCenter[1];
+      mesh.uvs[idx][0]=dragCenter[0]+du*cos-dv*sin;
+      mesh.uvs[idx][1]=dragCenter[1]+du*sin+dv*cos;
+    });
+  } else if(dragMode==='boxselect'){
+    boxRect = {x:Math.min(px,dragStartPx[0]), y:Math.min(py,dragStartPx[1]), w:Math.abs(px-dragStartPx[0]), h:Math.abs(py-dragStartPx[1])};
+  }
+  drawUV(); updateThreeUVAttribute(); render3D(); updateGizmoPanel();
+});
+
+function finishDrag(){
+  if(dragMode==='boxselect' && boxRect){
+    const newSel = boxAdditive ? new Set(selected) : new Set();
+    mesh.faces.forEach((face,fi)=>{
+      const [cx,cy]=faceCentroidUV(fi);
+      const [x,y]=uvToCanvas(cx,cy);
+      if(x>=boxRect.x && x<=boxRect.x+boxRect.w && y>=boxRect.y && y<=boxRect.y+boxRect.h) newSel.add(fi);
+    });
+    selected = newSel;
+  }
+  dragMode=null; boxRect=null; dragSnapshot=null;
+  liveRotDeg = 0; liveFx = 1; liveFy = 1;
+  uvCanvas.style.cursor = 'crosshair';
+  updateUI(); drawUV(); updateOverlay(); render3D();
+}
+function uvPointerEnd(e){
+  uvPointers.delete(e.pointerId);
+  if(uvPointers.size<2) uvPinchStart=null;
+  if(uvPointers.size===0) finishDrag();
+}
+uvCanvas.addEventListener('pointerup', uvPointerEnd);
+uvCanvas.addEventListener('pointercancel', uvPointerEnd);
+
+uvCanvas.addEventListener('wheel', e=>{
+  if(!mesh) return;
+  e.preventDefault();
+  uvView.zoom = Math.min(20, Math.max(0.15, uvView.zoom * (e.deltaY<0?1.1:0.9)));
+  drawUV();
+}, {passive:false});
+
+document.getElementById('zoomInBtn').onclick = ()=>{ uvView.zoom=Math.min(20,uvView.zoom*1.25); drawUV(); };
+document.getElementById('zoomOutBtn').onclick = ()=>{ uvView.zoom=Math.max(0.15,uvView.zoom/1.25); drawUV(); };
+document.getElementById('fitBtn').onclick = ()=>{ fitUVView(); drawUV(); };
+
+/* ============================= UNDO / REDO ============================= */
+function pushUndo(){
+  if(!mesh) return;
+  mesh.undoStack.push(mesh.uvs.map(p=>p.slice()));
+  if(mesh.undoStack.length>40) mesh.undoStack.shift();
+  mesh.redoStack.length = 0;
+  updateUI();
+}
+function undo(){
+  if(!mesh || mesh.undoStack.length===0) return;
+  resetNumLive();
+  mesh.redoStack.push(mesh.uvs.map(p=>p.slice()));
+  const prev = mesh.undoStack.pop();
+  prev.forEach((p,i)=>{ mesh.uvs[i][0]=p[0]; mesh.uvs[i][1]=p[1]; });
+  updateThreeUVAttribute(); drawUV(); render3D(); updateUI();
+}
+function redo(){
+  if(!mesh || mesh.redoStack.length===0) return;
+  resetNumLive();
+  mesh.undoStack.push(mesh.uvs.map(p=>p.slice()));
+  const next = mesh.redoStack.pop();
+  next.forEach((p,i)=>{ mesh.uvs[i][0]=p[0]; mesh.uvs[i][1]=p[1]; });
+  updateThreeUVAttribute(); drawUV(); render3D(); updateUI();
+}
+document.getElementById('undoBtn').onclick = undo;
+document.getElementById('redoBtn').onclick = redo;
+window.addEventListener('keydown', e=>{
+  if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='z' && !e.shiftKey){ e.preventDefault(); undo(); }
+  else if((e.ctrlKey||e.metaKey) && (e.key.toLowerCase()==='y' || (e.shiftKey && e.key.toLowerCase()==='z'))){ e.preventDefault(); redo(); }
+});
+
+/* ============================= OBJ / GLTF / GLB EXPORT ============================= */
+function downloadBlob(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download=filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function generateOBJMulti(){
+  const out = ['# Diekspor oleh UV Face Editor'];
+  let vOffset=0, vtOffset=0, vnOffset=0;
+  objects.forEach(obj=>{
+    out.push('o ' + (obj.name||'Object').replace(/\s+/g,'_'));
+    const vMap=new Map(), vnMap=new Map();
+    const localV=[], localVN=[];
+    obj.faces.forEach(face=>face.forEach(c=>{
+      if(!vMap.has(c.v)){ vMap.set(c.v, localV.length); localV.push(obj.positions[c.v]); }
+      if(obj.normals && c.vn!==null && !vnMap.has(c.vn)){ vnMap.set(c.vn, localVN.length); localVN.push(obj.normals[c.vn]); }
+    }));
+    localV.forEach(p=>out.push('v '+p[0].toFixed(6)+' '+p[1].toFixed(6)+' '+p[2].toFixed(6)));
+    localVN.forEach(n=>out.push('vn '+n[0].toFixed(6)+' '+n[1].toFixed(6)+' '+n[2].toFixed(6)));
+    const uvScaleOBJ = (obj.uvScale===undefined || obj.uvScale===null) ? 1 : obj.uvScale;
+    obj.uvs.forEach(uv=>out.push('vt '+(uv[0]*uvScaleOBJ).toFixed(6)+' '+(uv[1]*uvScaleOBJ).toFixed(6)));
+    obj.faces.forEach((face,fi)=>{
+      const idxs = obj.cornerUVs[fi];
+      const tokens = face.map((c,ci)=>{
+        const vi = vMap.get(c.v)+vOffset+1;
+        const vti = idxs[ci]+vtOffset+1;
+        if(obj.normals && c.vn!==null) return vi+'/'+vti+'/'+(vnMap.get(c.vn)+vnOffset+1);
+        return vi+'/'+vti;
+      });
+      out.push('f '+tokens.join(' '));
+    });
+    vOffset+=localV.length; vnOffset+=localVN.length; vtOffset+=obj.uvs.length;
+  });
+  return out.join('\n')+'\n';
+}
+document.getElementById('exportOBJBtn').onclick = ()=>{
+  if(!objects.length) return;
+  downloadBlob(new Blob([generateOBJMulti()],{type:'text/plain'}), 'edited_uv.obj');
+};
+
+function buildGLTFJSONAndBuffer(){
+  const bufferChunks=[]; let byteOffset=0;
+  const bufferViews=[], accessors=[], meshes=[], materials=[], textures=[], images=[];
+  const imageKeyToIndex = new Map();
+
+  function pushBufferView(typedArray){
+    const bytes = new Uint8Array(typedArray.buffer, typedArray.byteOffset, typedArray.byteLength);
+    const pad = (4-(bytes.length%4))%4;
+    const bvIndex = bufferViews.length;
+    bufferViews.push({buffer:0, byteOffset, byteLength:bytes.length});
+    bufferChunks.push(bytes); byteOffset += bytes.length;
+    if(pad>0){ bufferChunks.push(new Uint8Array(pad)); byteOffset += pad; }
+    return bvIndex;
+  }
+  function addAccessor(arr, numComp, componentType, typeName, withMinMax){
+    const bvIdx = pushBufferView(arr);
+    const acc = {bufferView:bvIdx, componentType, count:arr.length/numComp, type:typeName};
+    if(withMinMax){
+      const min=new Array(numComp).fill(Infinity), max=new Array(numComp).fill(-Infinity);
+      for(let i=0;i<arr.length;i+=numComp) for(let c=0;c<numComp;c++){ min[c]=Math.min(min[c],arr[i+c]); max[c]=Math.max(max[c],arr[i+c]); }
+      acc.min=min; acc.max=max;
+    }
+    accessors.push(acc);
+    return accessors.length-1;
+  }
+  function getImageIndexFor(obj){
+    if(!obj.texture || !obj.texture.image) return null;
+    if(!obj.textureDataURL) obj.textureDataURL = imageToDataURL(obj.texture.image);
+    const key = obj.textureDataURL;
+    if(imageKeyToIndex.has(key)) return imageKeyToIndex.get(key);
+    const idx = images.length; images.push({uri:key}); imageKeyToIndex.set(key,idx);
+    return idx;
+  }
+
+  const objMeshIndex = [];
+  objects.forEach(obj=>{
+    // IMPORTANT: size buffers by TRIANGLE count, not face count. A face can be a
+    // quad/n-gon (m corners -> m-2 triangles via fan triangulation), so using
+    // faces.length here under-allocates for any non-triangular mesh, silently
+    // truncating the tail of the geometry on export (the "mesh terpisah-pisah/
+    // rusak" bug). Geometry itself is never modified — only re-triangulated the
+    // same way the 3D preview already does, so the exported shape is identical.
+    const triCount = obj.faces.reduce((s,f)=>s+(f.length-2),0);
+    const posArr = new Float32Array(triCount*3*3), uvArr = new Float32Array(triCount*3*2);
+    const nrmArr = obj.normals ? new Float32Array(triCount*3*3) : null;
+    const uvScaleGLTF = (obj.uvScale===undefined || obj.uvScale===null) ? 1 : obj.uvScale;
+    let w=0, wu=0, wn=0;
+    obj.faces.forEach((face,fi)=>{
+      const idxs = obj.cornerUVs[fi]; const m=face.length;
+      for(let i=1;i<m-1;i++){
+        [0,i,i+1].forEach(ci=>{
+          const p = obj.positions[face[ci].v];
+          posArr[w++]=p[0]; posArr[w++]=p[1]; posArr[w++]=p[2];
+          const uv = obj.uvs[idxs[ci]];
+          // flip V back to glTF's V-down convention on the way out (mirrors the
+          // flip applied on import above) so the exported file keeps the exact
+          // UV layout the person edited, oriented correctly in any glTF viewer.
+          // uvScale (tiling multiplier) is applied first, in the same internal
+          // v-up space, then the V-flip is applied on top of that.
+          uvArr[wu++]=uv[0]*uvScaleGLTF; uvArr[wu++]=1-(uv[1]*uvScaleGLTF);
+          if(nrmArr){
+            const vn = face[ci].vn;
+            // ensureValidNormals() (run once at load time) guarantees every
+            // corner has a valid vn already; this is only a last-resort
+            // safety net — no more hardcoded [0,1,0] world-up fallback, which
+            // was the root cause of lighting that looked fine at one rotation
+            // and wrong at another (a fixed vector baked into the mesh data
+            // that never matched the face's real orientation).
+            const nn = (vn!==null && obj.normals[vn]) ? obj.normals[vn] : computeFaceNormal(obj.positions, face);
+            nrmArr[wn++]=nn[0]; nrmArr[wn++]=nn[1]; nrmArr[wn++]=nn[2];
+          }
+        });
+      }
+    });
+    const posAcc = addAccessor(posArr,3,5126,'VEC3',true);
+    const uvAcc = addAccessor(uvArr,2,5126,'VEC2',false);
+    const attributes = {POSITION:posAcc, TEXCOORD_0:uvAcc};
+    if(nrmArr) attributes.NORMAL = addAccessor(nrmArr,3,5126,'VEC3',false);
+    let materialIndex = null;
+    const imgIdx = getImageIndexFor(obj);
+    if(imgIdx!==null){
+      const texIdx = textures.length; textures.push({source:imgIdx});
+      materialIndex = materials.length;
+      materials.push({pbrMetallicRoughness:{baseColorTexture:{index:texIdx}, metallicFactor:0, roughnessFactor:1}});
+    }
+    const prim = {attributes, mode:4};
+    if(materialIndex!==null) prim.material = materialIndex;
+    const meshIdx = meshes.length;
+    meshes.push({name:obj.name, primitives:[prim]});
+    objMeshIndex.push(meshIdx);
+  });
+
+  const nodesJSON = gltfNodes.map(n=>{
+    const o = {name:n.name};
+    if(n.children && n.children.length) o.children = n.children.slice();
+    o.matrix = n.matrix.elements.slice();
+    if(n.meshObjectIndex!==null) o.mesh = objMeshIndex[n.meshObjectIndex];
+    return o;
+  });
+
+  const bin = new Uint8Array(byteOffset);
+  let p=0; bufferChunks.forEach(chunk=>{ bin.set(chunk,p); p+=chunk.length; });
+
+  const json = {
+    asset:{version:'2.0', generator:'UV Face Editor'},
+    scene:0, scenes:[{nodes:rootIndices}],
+    nodes:nodesJSON, meshes, accessors, bufferViews,
+    buffers:[{byteLength:byteOffset}],
+  };
+  if(materials.length) json.materials = materials;
+  if(textures.length) json.textures = textures;
+  if(images.length) json.images = images;
+  return {json, bin};
+}
+
+function bytesToBase64(bytes){
+  let binary=''; const chunk=0x8000;
+  for(let i=0;i<bytes.length;i+=chunk) binary += String.fromCharCode.apply(null, bytes.subarray(i,i+chunk));
+  return btoa(binary);
+}
+function exportGLTF(binary){
+  const {json, bin} = buildGLTFJSONAndBuffer();
+  if(!binary){
+    json.buffers[0].uri = 'data:application/octet-stream;base64,' + bytesToBase64(bin);
+    downloadBlob(new Blob([JSON.stringify(json,null,2)],{type:'model/gltf+json'}), 'model.gltf');
+  } else{
+    const jsonBytes = new TextEncoder().encode(JSON.stringify(json));
+    const jsonPad = (4-(jsonBytes.length%4))%4, jsonChunkLen = jsonBytes.length+jsonPad;
+    const binPad = (4-(bin.length%4))%4, binChunkLen = bin.length+binPad;
+    const totalLen = 12 + 8+jsonChunkLen + 8+binChunkLen;
+    const buf = new ArrayBuffer(totalLen);
+    const dv = new DataView(buf);
+    dv.setUint32(0,0x46546C67,true); dv.setUint32(4,2,true); dv.setUint32(8,totalLen,true);
+    let off=12;
+    dv.setUint32(off,jsonChunkLen,true); off+=4; dv.setUint32(off,0x4E4F534A,true); off+=4;
+    new Uint8Array(buf,off,jsonBytes.length).set(jsonBytes);
+    for(let i=0;i<jsonPad;i++) new Uint8Array(buf,off+jsonBytes.length+i,1)[0]=0x20;
+    off += jsonChunkLen;
+    dv.setUint32(off,binChunkLen,true); off+=4; dv.setUint32(off,0x004E4942,true); off+=4;
+    new Uint8Array(buf,off,bin.length).set(bin);
+    downloadBlob(new Blob([buf],{type:'model/gltf-binary'}), 'model.glb');
+  }
+}
+document.getElementById('exportGLBBtn').onclick = ()=>{ try{ if(objects.length) exportGLTF(true); }catch(err){ alert('Gagal ekspor GLB: '+err.message); console.error(err); } };
+document.getElementById('exportGLTFBtn').onclick = ()=>{ try{ if(objects.length) exportGLTF(false); }catch(err){ alert('Gagal ekspor GLTF: '+err.message); console.error(err); } };
+
+function exportUVLayoutImage(format){
+  if(!mesh) return;
+  const size = 1024;
+  const off = document.createElement('canvas'); off.width=size; off.height=size;
+  const ctx = off.getContext('2d');
+  if(uvShowTexture && uvBackgroundImage){
+    ctx.drawImage(uvBackgroundImage, 0, 0, size, size);
+  } else{
+    ctx.fillStyle='#1f1f22'; ctx.fillRect(0,0,size,size);
+    const steps=8, cell=size/steps;
+    for(let i=0;i<steps;i++) for(let j=0;j<steps;j++){ ctx.fillStyle=(i+j)%2===0?'#2a2a2e':'#313135'; ctx.fillRect(i*cell,j*cell,cell,cell); }
+  }
+  ctx.strokeStyle = format==='jpg' ? '#ffffff' : '#39ff88';
+  ctx.lineWidth = 2;
+  mesh.faces.forEach((face,fi)=>{
+    const idxs = mesh.cornerUVs[fi];
+    ctx.beginPath();
+    idxs.forEach((ci,k)=>{ const u=mesh.uvs[ci][0], v=mesh.uvs[ci][1]; const x=u*size, y=(1-v)*size; if(k===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); });
+    ctx.closePath(); ctx.stroke();
+  });
+  const mime = format==='jpg' ? 'image/jpeg' : 'image/png';
+  off.toBlob(blob=>downloadBlob(blob, 'uv_layout.'+(format==='jpg'?'jpg':'png')), mime, 0.92);
+}
+document.getElementById('exportPngBtn').onclick = ()=>exportUVLayoutImage('png');
+
+/* ============================= UI WIRING ============================= */
+function populateObjectSelector(){
+  const sel = document.getElementById('objectSelect');
+  sel.innerHTML='';
+  objects.forEach((o,i)=>{
+    const opt = document.createElement('option');
+    opt.value=i; opt.textContent = o.name + ' ('+o.faces.length+' face)';
+    sel.appendChild(opt);
+  });
+  sel.value = activeObjectIndex;
+  document.getElementById('objectSelectWrap').style.display = objects.length>1 ? 'block' : 'none';
+}
+document.getElementById('objectSelect').addEventListener('change', e=>{
+  resetNumLive();
+  activeObjectIndex = parseInt(e.target.value,10);
+  mesh = objects[activeObjectIndex];
+  selected.clear();
+  fitUVView();
+  uvBackgroundImage = mesh.texture ? mesh.texture.image : null;
+  syncUVScaleInput();
+  drawUV(); render3D(); updateUI(); updateOverlay(); render3D();
+});
+
+/* ---- UV Scale (tiling multiplier) — additive feature, does not touch mesh.uvs ---- */
+function syncUVScaleInput(){
+  const input = document.getElementById('uvScaleInput');
+  input.value = mesh ? (mesh.uvScale===undefined || mesh.uvScale===null ? 1 : mesh.uvScale) : 1;
+}
+function applyUVScaleFromInput(commit){
+  if(!mesh) return;
+  const input = document.getElementById('uvScaleInput');
+  let v = parseFloat(input.value);
+  if(!isFinite(v) || v<=0){
+    if(!commit) return; // let the person keep typing (e.g. "0.", "-") without fighting them
+    v = 1; // only snap back to a safe default once they leave the field
+  }
+  mesh.uvScale = v;
+  if(commit) input.value = v;
+  updateThreeUVAttribute();
+  render3D();
+}
+document.getElementById('uvScaleInput').addEventListener('input', ()=>applyUVScaleFromInput(false));
+document.getElementById('uvScaleInput').addEventListener('change', ()=>applyUVScaleFromInput(true));
+document.getElementById('uvScaleResetBtn').onclick = ()=>{
+  if(!mesh) return;
+  mesh.uvScale = 1;
+  syncUVScaleInput();
+  updateThreeUVAttribute();
+  render3D();
+};
+
+function updateUI(){
+  const has = objects.length>0;
+  ['exportOBJBtn','exportGLBBtn','exportGLTFBtn','exportPngBtn','selectAllBtn','deselectBtn','textureBtn','uvScaleInput','uvScaleResetBtn'].forEach(id=>{
+    document.getElementById(id).disabled = !has;
+  });
+  document.getElementById('resetSelBtn').disabled = !has || selected.size===0;
+  document.getElementById('resetAllBtn').disabled = !has;
+  document.getElementById('undoBtn').disabled = !mesh || mesh.undoStack.length===0;
+  document.getElementById('redoBtn').disabled = !mesh || mesh.redoStack.length===0;
+  document.getElementById('statObjName').textContent = mesh ? mesh.name : '-';
+  document.getElementById('statObjIdx').textContent = has ? (activeObjectIndex+1) : 0;
+  document.getElementById('statObjCount').textContent = objects.length;
+  document.getElementById('statFaces').textContent = mesh ? mesh.faces.length : 0;
+  document.getElementById('statVerts').textContent = mesh ? mesh.positions.length : 0;
+  document.getElementById('statSelected').textContent = selected.size;
+  document.getElementById('emptyState').style.display = has ? 'none' : 'flex';
+  updateGizmoPanel();
+}
+
+document.getElementById('selectAllBtn').onclick = ()=>{ if(!mesh) return; selected = new Set(mesh.faces.map((_,i)=>i)); updateUI(); drawUV(); updateOverlay(); render3D(); };
+document.getElementById('deselectBtn').onclick = ()=>{ selected.clear(); updateUI(); drawUV(); updateOverlay(); render3D(); };
+document.getElementById('resetSelBtn').onclick = ()=>{
+  if(!mesh) return; pushUndo();
+  selected.forEach(fi=>{ mesh.cornerUVs[fi].forEach(idx=>{ mesh.uvs[idx][0]=mesh.uvsOriginal[idx][0]; mesh.uvs[idx][1]=mesh.uvsOriginal[idx][1]; }); });
+  drawUV(); updateThreeUVAttribute(); render3D();
+};
+document.getElementById('resetAllBtn').onclick = ()=>{
+  if(!mesh) return; pushUndo();
+  mesh.uvs.forEach((uv,i)=>{ uv[0]=mesh.uvsOriginal[i][0]; uv[1]=mesh.uvsOriginal[i][1]; });
+  drawUV(); updateThreeUVAttribute(); render3D();
+};
+
+/* ============================= GIZMO MODE + NUMERIC FIELDS ============================= */
+const gzEl = {
+  posX: document.getElementById('posX'), posY: document.getElementById('posY'),
+  rotAngle: document.getElementById('rotAngle'),
+  scAll: document.getElementById('scAll'), scX: document.getElementById('scX'), scY: document.getElementById('scY'),
+};
+const GIZMO_HINTS = {
+  position: 'Position — seret panah atau titik tengah',
+  rotate:   'Rotate — seret cincin untuk memutar',
+  scale:    'Scale — seret kotak (oranye = proporsional)',
+};
+
+function setGizmoMode(m){
+  if(!GIZMO_HINTS[m]) return;
+  endNumSession();
+  gizmoMode = m; // satu mode aktif: mode lain otomatis mati
+  document.querySelectorAll('#gizmoModes button').forEach(b=>{
+    const on = b.dataset.mode===m;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  document.querySelectorAll('#gizmoFields .fieldset').forEach(f=>f.classList.toggle('show', f.dataset.for===m));
+  document.getElementById('uvHint').textContent = GIZMO_HINTS[m];
+  drawUV();
+}
+document.querySelectorAll('#gizmoModes button').forEach(b=>{
+  b.addEventListener('click', ()=>setGizmoMode(b.dataset.mode));
+});
+
+function normalizeDeg(d){ return ((d+180)%360+360)%360-180; }
+function fmtNum(n,d){ return String(parseFloat(n.toFixed(d))); }
+function setFieldValue(el, val, force){
+  if(!force && document.activeElement===el) return; // jangan menimpa angka yang sedang diketik
+  el.value = val;
+}
+
+function updateGizmoPanel(force){
+  const has = !!mesh && selected.size>0;
+  const els = Object.values(gzEl);
+  els.forEach(el=>{ el.disabled = !has; });
+  if(!has){ els.forEach(el=>setFieldValue(el, '', force)); return; }
+  const b = selectionBBox();
+  setFieldValue(gzEl.posX, b ? fmtNum(b.cx,4) : '', force);
+  setFieldValue(gzEl.posY, b ? fmtNum(b.cy,4) : '', force);
+  setFieldValue(gzEl.rotAngle, fmtNum(liveRotDeg,2), force);
+  setFieldValue(gzEl.scAll, Math.abs(liveFx-liveFy)<1e-9 ? fmtNum(liveFx,3) : '', force);
+  setFieldValue(gzEl.scX, fmtNum(liveFx,3), force);
+  setFieldValue(gzEl.scY, fmtNum(liveFy,3), force);
+}
+
+function resetNumLive(){ numSession=null; liveRotDeg=0; liveFx=1; liveFy=1; }
+function endNumSession(){
+  if(!numSession && liveRotDeg===0 && liveFx===1 && liveFy===1) return;
+  resetNumLive();
+  updateGizmoPanel(true);
+}
+function beginNumSession(){
+  if(!mesh || selected.size===0) return false;
+  if(numSession && (numSession.mesh!==mesh || numSession.selSize!==selected.size)) numSession = null; // sesi basi
+  if(numSession) return true;
+  const bbox = selectionBBox();
+  if(!bbox) return false;
+  pushUndo(); // satu langkah undo untuk satu sesi edit angka
+  numSession = { mesh, selSize:selected.size, snap:snapshotSelectedUVs(), cx:bbox.cx, cy:bbox.cy };
+  return true;
+}
+
+function applyNumericEdit(kind, which){
+  if(!beginNumSession()) return;
+  const s = numSession, uvs = mesh.uvs;
+  if(kind==='position'){
+    const x = parseFloat(gzEl.posX.value), y = parseFloat(gzEl.posY.value);
+    let du = 0, dv = 0;
+    if(which==='x' && isFinite(x)) du = x - s.cx;
+    if(which==='y' && isFinite(y)) dv = y - s.cy;
+    s.snap.forEach((v,idx)=>{ uvs[idx][0]=v[0]+du; uvs[idx][1]=v[1]+dv; });
+  } else if(kind==='rotate'){
+    let deg = parseFloat(gzEl.rotAngle.value);
+    if(!isFinite(deg)) deg = 0;
+    liveRotDeg = deg;
+    const a = deg*Math.PI/180, cos = Math.cos(a), sin = Math.sin(a);
+    s.snap.forEach((v,idx)=>{
+      const du=v[0]-s.cx, dv=v[1]-s.cy;
+      uvs[idx][0] = s.cx + du*cos - dv*sin;
+      uvs[idx][1] = s.cy + du*sin + dv*cos;
+    });
+  } else{ // scale
+    const read = el=>{ const v=parseFloat(el.value); return (isFinite(v) && Math.abs(v)>1e-4) ? v : null; };
+    if(which==='all'){ const v=read(gzEl.scAll); if(v!==null){ liveFx=v; liveFy=v; } }
+    else if(which==='x'){ const v=read(gzEl.scX); if(v!==null) liveFx=v; }
+    else{ const v=read(gzEl.scY); if(v!==null) liveFy=v; }
+    s.snap.forEach((v,idx)=>{
+      uvs[idx][0] = s.cx + (v[0]-s.cx)*liveFx;
+      uvs[idx][1] = s.cy + (v[1]-s.cy)*liveFy;
+    });
+  }
+  updateThreeUVAttribute(); drawUV(); render3D(); updateGizmoPanel();
+}
+
+function bindNumField(el, kind, which){
+  el.addEventListener('input', ()=>applyNumericEdit(kind, which));
+  el.addEventListener('blur', endNumSession);
+  el.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); el.blur(); } });
+}
+bindNumField(gzEl.posX, 'position', 'x');
+bindNumField(gzEl.posY, 'position', 'y');
+bindNumField(gzEl.rotAngle, 'rotate', 'angle');
+bindNumField(gzEl.scAll, 'scale', 'all');
+bindNumField(gzEl.scX, 'scale', 'x');
+bindNumField(gzEl.scY, 'scale', 'y');
+
+/* ============================= LAYOUT: MENU + UV VIEWPORT (buka/tutup, geser) ============================= */
+const mainArea = document.getElementById('mainArea');
+const pane3dEl = document.getElementById('pane3d');
+const uvPane = document.getElementById('uvPane');
+const splitterEl = document.getElementById('splitter');
+const toolPanel = document.getElementById('toolPanel');
+const menuBtn = document.getElementById('menuBtn');
+const uvUpBtn = document.getElementById('uvUpBtn');
+const uvDownBtn = document.getElementById('uvDownBtn');
+const uvToggleBtn = document.getElementById('uvToggleBtn');
+const stackedMQ = window.matchMedia('(max-width:760px)');
+let uvFrac = 0.55;          // porsi ruang yang dipakai viewport UV (vs viewport 3D)
+let uvCollapsed = false;
+let resizeRaf = 0;
+
+function scheduleResize(){
+  if(resizeRaf) return;
+  resizeRaf = requestAnimationFrame(()=>{ resizeRaf = 0; resizeCanvases(); });
+}
+
+function clampUvFrac(f){
+  const stacked = stackedMQ.matches, split = stacked ? 22 : 16;
+  const avail = Math.max(120, (stacked ? mainArea.clientHeight : mainArea.clientWidth) - split);
+  const minPx = stacked ? (46 + 100 + 90) : 300;   // header + bar gizmo + sisa kanvas UV
+  const minF = Math.min(0.8, minPx/avail);
+  const maxF = Math.max(minF, 1 - 90/avail);       // sisakan ruang minimal untuk viewport 3D
+  return Math.min(maxF, Math.max(minF, f));
+}
+
+function applyUvLayout(){
+  const stacked = stackedMQ.matches;
+  uvPane.classList.toggle('collapsed', uvCollapsed);
+  splitterEl.style.display = uvCollapsed ? 'none' : '';
+  if(uvCollapsed){
+    uvPane.style.flex = '';
+    pane3dEl.style.flex = '1 1 0px';
+  } else{
+    uvPane.style.flex = uvFrac.toFixed(4) + ' 1 0px';
+    pane3dEl.style.flex = (1-uvFrac).toFixed(4) + ' 1 0px';
+  }
+  uvUpBtn.textContent = stacked ? '↑' : '←';
+  uvDownBtn.textContent = stacked ? '↓' : '→';
+  uvToggleBtn.querySelector('.ico').textContent = uvCollapsed ? '▴' : '▾';
+  uvToggleBtn.querySelector('.lbl').textContent = uvCollapsed ? 'Buka' : 'Tutup';
+  uvToggleBtn.setAttribute('aria-expanded', uvCollapsed ? 'false' : 'true');
+  scheduleResize();
+}
+
+uvToggleBtn.addEventListener('click', ()=>{ uvCollapsed = !uvCollapsed; applyUvLayout(); });
+uvUpBtn.addEventListener('click', ()=>{ uvFrac = clampUvFrac(uvFrac + 0.12); applyUvLayout(); });
+uvDownBtn.addEventListener('click', ()=>{ uvFrac = clampUvFrac(uvFrac - 0.12); applyUvLayout(); });
+
+let splitDragging = false;
+splitterEl.addEventListener('pointerdown', e=>{
+  splitDragging = true;
+  splitterEl.classList.add('drag');
+  splitterEl.setPointerCapture(e.pointerId);
+  e.preventDefault();
+});
+splitterEl.addEventListener('pointermove', e=>{
+  if(!splitDragging) return;
+  const r = mainArea.getBoundingClientRect(), stacked = stackedMQ.matches, split = stacked ? 22 : 16;
+  const avail = (stacked ? r.height : r.width) - split;
+  const uvSize = stacked ? (r.bottom - e.clientY - split/2) : (r.right - e.clientX - split/2);
+  uvFrac = clampUvFrac(uvSize/avail);
+  applyUvLayout();
+});
+function endSplitDrag(){ splitDragging = false; splitterEl.classList.remove('drag'); }
+splitterEl.addEventListener('pointerup', endSplitDrag);
+splitterEl.addEventListener('pointercancel', endSplitDrag);
+
+function setMenuOpen(open){
+  toolPanel.classList.toggle('open', open);
+  menuBtn.classList.toggle('on', open);
+  menuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+menuBtn.addEventListener('click', ()=>setMenuOpen(!toolPanel.classList.contains('open')));
+
+window.addEventListener('resize', ()=>{ uvFrac = clampUvFrac(uvFrac); applyUvLayout(); });
+
+/* ============================= RESIZE / INIT ============================= */
+function resizeCanvases(){
+  const dpr = getPixelRatio();
+  uvCanvasDPR = dpr;
+  const uvRect = uvCanvas.getBoundingClientRect();
+  uvCanvas.width = Math.max(1, Math.round(uvRect.width*dpr));
+  uvCanvas.height = Math.max(1, Math.round(uvRect.height*dpr));
+  if(renderer){
+    const rect = document.getElementById('viewport3d').getBoundingClientRect();
+    renderer.setPixelRatio(dpr);
+    renderer.setSize(rect.width, rect.height, false);
+    camera.aspect = rect.width/Math.max(1,rect.height);
+    camera.updateProjectionMatrix();
+  }
+  drawUV(); render3D();
+}
+let resizeTimer=null;
+window.addEventListener('resize', ()=>{ clearTimeout(resizeTimer); resizeTimer=setTimeout(resizeCanvases, 120); });
+
+initThree();
+setGizmoMode('position');
+setMenuOpen(!stackedMQ.matches);   // di HP menu tertutup dulu supaya viewport lega
+uvFrac = clampUvFrac(uvFrac);
+applyUvLayout();
+resizeCanvases();
+updateUI();
+</script>
+</body>
+</html>
